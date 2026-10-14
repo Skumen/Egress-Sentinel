@@ -1,0 +1,25 @@
+{
+  "adminName": "Administrator",
+  "monitorName": "monitor-01",
+  "timezone": "UTC",
+
+  "intervalSeconds": 60,
+  "timeoutSeconds": 5,
+  "failThreshold": 3,
+  "remindEveryMinutes": 60,
+
+  "latencyThresholdMs": 300,
+  "latencyThresholdHttpMs": 0,
+  "latencyChecks": 3,
+
+  "maintenanceNoticeMinutes": 60,
+  "notifyOnStart": true,
+
+  "servers": [],
+
+  "canaries": [
+    { "type": "tcp", "host": "1.1.1.1", "port": 443 },
+    { "type": "tcp", "host": "8.8.8.8", "port": 53 },
+    { "type": "tcp", "host": "api.telegram.org", "port": 443 }
+  ]
+}
