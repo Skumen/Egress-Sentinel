@@ -1,0 +1,16 @@
+{
+  "name": "egress-sentinel-sensor",
+  "version": "1.0.0",
+  "description": "External traffic sensor for Egress Sentinel: verifies that traffic passes through VLESS exit nodes",
+  "license": "MIT",
+  "type": "module",
+  "main": "sensor.js",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node sensor.js",
+    "check": "node sensor.js --check"
+  }
+}

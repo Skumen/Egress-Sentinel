@@ -1,0 +1,1930 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Egress Sentinel</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-secondary-bg-color, #eef0f4);
+    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
+    --text: var(--tg-theme-text-color, #14161a);
+    --hint: var(--tg-theme-hint-color, #7d838d);
+    --link: var(--tg-theme-link-color, #2b78e4);
+    --btn: var(--tg-theme-button-color, #2b78e4);
+    --btn-text: var(--tg-theme-button-text-color, #ffffff);
+    --danger: var(--tg-theme-destructive-text-color, #d63c3c);
+    --sep: rgba(128, 128, 128, 0.2);
+    --ok: #2f9e5e;
+    --warn: #d18a00;
+    --down: #d63c3c;
+    --maint: #6a68d8;
+    --muted: #8a9099;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.tg) {
+      --bg: #0e1014; --card: #1a1d23; --text: #e9eaed; --hint: #8c929c; --sep: rgba(255, 255, 255, 0.1);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { max-width: 640px; margin: 0 auto; padding: 16px 16px calc(32px + env(safe-area-inset-bottom)); }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+
+  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .title { font-size: 20px; font-weight: 700; letter-spacing: 0.2px; }
+  .sub { color: var(--hint); font-size: 13px; margin-top: 2px; }
+  .role { flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; padding: 4px 8px; border-radius: 6px;
+          border: 1px solid var(--sep); color: var(--hint); }
+  .role.admin { color: var(--btn); border-color: var(--btn); }
+
+  .banner { border-radius: var(--radius); padding: 14px 16px; color: #fff; margin-bottom: 12px; }
+  .banner.ok { background: var(--ok); } .banner.warn { background: var(--warn); }
+  .banner.down { background: var(--down); } .banner.muted { background: var(--muted); }
+  .banner-title { font-weight: 700; font-size: 15px; letter-spacing: 0.3px; }
+  .banner-sub { font-size: 12.5px; opacity: 0.9; margin-top: 3px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+  .tile { background: var(--card); border-radius: var(--radius); padding: 10px 8px; text-align: center; }
+  .tile-num { font-size: 20px; font-weight: 700; }
+  .tile-label { font-size: 10.5px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 2px; }
+  .tile.down .tile-num { color: var(--down); } .tile.maint .tile-num { color: var(--maint); }
+  .tile.ok .tile-num { color: var(--ok); }
+
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 8px;
+                  font-size: 12px; font-weight: 600; color: var(--hint); letter-spacing: 0.6px; }
+  .card { background: var(--card); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+
+  .item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; }
+  .item + .item { border-top: 1px solid var(--sep); }
+  .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
+  .dot.down { background: var(--down); box-shadow: 0 0 0 4px rgba(214, 60, 60, 0.18); }
+  .dot.maint { background: var(--maint); }
+  .item-main { flex: 1; min-width: 0; }
+  .item-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-sub { color: var(--hint); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-side { flex: none; text-align: right; }
+  .item-meta { display: block; color: var(--hint); font-size: 12px; margin-top: 3px; }
+  .chev { flex: none; color: var(--hint); font-size: 18px; }
+
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px; padding: 3px 7px;
+           border-radius: 5px; color: #fff; background: var(--muted); }
+  .badge.ok { background: var(--ok); } .badge.warn { background: var(--warn); }
+  .badge.down { background: var(--down); } .badge.maint { background: var(--maint); }
+  .badge.ack { background: transparent; color: var(--hint); border: 1px solid var(--sep); }
+
+  .kv { display: flex; justify-content: space-between; gap: 16px; padding: 10px 14px; }
+  .kv + .kv { border-top: 1px solid var(--sep); }
+  .kv-k { color: var(--hint); flex: none; }
+  .kv-v { text-align: right; word-break: break-word; min-width: 0; }
+
+  .nav { margin-bottom: 10px; }
+  .link { color: var(--link); }
+  h1 { font-size: 20px; margin: 0 0 6px; word-break: break-word; }
+  .detail-head { margin-bottom: 14px; }
+
+  .btn { display: block; width: 100%; padding: 12px 14px; border-radius: 10px; background: var(--card);
+         color: var(--link); font-weight: 600; text-align: center; margin-bottom: 8px; }
+  .btn.primary { background: var(--btn); color: var(--btn-text); }
+  .btn.danger { color: var(--danger); }
+  .btn-small { color: var(--link); font-size: 13px; font-weight: 600; letter-spacing: 0; }
+  .actions { margin-bottom: 20px; }
+  .note { color: var(--hint); font-size: 13px; padding: 0 4px; margin-bottom: 16px; }
+
+  .seg { display: flex; background: var(--card); border-radius: 10px; padding: 3px; gap: 3px; margin-bottom: 8px; }
+  .seg button { flex: 1; padding: 8px 4px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--hint); }
+  .seg button.on { background: var(--btn); color: var(--btn-text); }
+
+  .field { display: block; margin-bottom: 14px; }
+  .field-label { display: block; font-size: 12px; font-weight: 600; color: var(--hint); letter-spacing: 0.4px;
+                 margin: 0 4px 6px; text-transform: uppercase; }
+  .field input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--sep);
+                 background: var(--card); color: var(--text); font: inherit; outline: none; }
+  .field input:focus { border-color: var(--btn); }
+  .field-hint { display: block; color: var(--hint); font-size: 12px; margin: 6px 4px 0; }
+
+  .result { border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 13.5px; }
+  .result.ok { background: rgba(47, 158, 94, 0.14); color: var(--ok); }
+  .result.err { background: rgba(214, 60, 60, 0.12); color: var(--down); }
+
+  .row-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+  .switch { flex: none; width: 46px; height: 28px; border-radius: 14px; background: var(--sep); position: relative;
+            transition: background 0.15s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+                   background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.15s; }
+  .switch.on { background: var(--ok); }
+  .switch.on::after { transform: translateX(18px); }
+
+  .footer { color: var(--hint); font-size: 12px; text-align: center; margin-top: 8px; }
+  .empty { padding: 18px 14px; color: var(--hint); text-align: center; }
+  .center { text-align: center; padding: 60px 20px; color: var(--hint); }
+  .center .title { color: var(--text); margin-bottom: 8px; }
+
+  /* ── History & charts ── */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin: 10px 0 12px; }
+  .stat { background: var(--card); border-radius: var(--radius); padding: 10px 12px; }
+  .stat-value { font-size: 17px; font-weight: 600; }
+  .stat-label { font-size: 11.5px; color: var(--hint); margin-top: 2px; }
+  .chart-card { padding: 12px 14px 10px; margin-bottom: 12px; overflow: visible; }
+  .chart-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .chart-sub { color: var(--hint); font-weight: 400; }
+  .chart { position: relative; width: 100%; touch-action: pan-y; }
+  .chart svg { display: block; overflow: visible; }
+  .chart .grid { stroke: var(--sep); stroke-width: 1; }
+  .chart .axis { fill: var(--hint); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .chart .line { fill: none; stroke: var(--btn); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .area { fill: var(--btn); opacity: 0.1; }
+  .chart .pt { fill: var(--btn); }
+  .chart .thr { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 4 3; }
+  .chart .cross { stroke: var(--hint); stroke-width: 1; }
+  .chart .hover-dot { fill: var(--btn); stroke: var(--card); stroke-width: 2; }
+  .chart .cell.ok { fill: var(--ok); } .chart .cell.warn { fill: var(--warn); }
+  .chart .cell.down { fill: var(--down); } .chart .cell.none { fill: var(--hint); opacity: 0.3; }
+  .chart-note { font-size: 12px; color: var(--hint); margin-top: 6px; }
+  .tip { position: absolute; display: none; z-index: 5; pointer-events: none; white-space: nowrap;
+         background: rgba(30, 32, 38, 0.96); color: #fff; font-size: 12px; line-height: 1.4;
+         padding: 6px 9px; border-radius: 8px;
+         /* border and shadow keep the tooltip apart from the card in Telegram's dark theme */
+         border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 12px; color: var(--hint); }
+  .key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .key.ok { background: var(--ok); } .key.warn { background: var(--warn); }
+  .key.down { background: var(--down); } .key.none { background: var(--hint); opacity: 0.3; }
+  .table-view { padding: 0; margin-bottom: 20px; }
+  .table-view summary { padding: 12px 14px; cursor: pointer; color: var(--link); font-size: 14px; }
+  .table-wrap { max-height: 320px; overflow: auto; border-top: 1px solid var(--sep); }
+  .table-view table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .table-view th, .table-view td { padding: 7px 10px; text-align: right; white-space: nowrap; }
+  .table-view th:first-child, .table-view td:first-child { text-align: left; }
+  .table-view th { position: sticky; top: 0; background: var(--card); color: var(--hint); font-weight: 600; }
+  .table-view tr + tr td { border-top: 1px solid var(--sep); }
+  .item.static { cursor: default; }
+  .head-actions { display: flex; gap: 16px; }
+  .move { flex: none; display: flex; gap: 6px; }
+  .move-btn { width: 36px; height: 36px; border-radius: 9px; background: var(--bg); color: var(--link);
+              font-size: 17px; font-weight: 600; }
+  .move-btn:disabled { opacity: 0.3; }
+  .user-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 6px; }
+  .danger-text { color: var(--danger); }
+  .center p { max-width: 420px; margin: 8px auto 18px; line-height: 1.5; }
+  .item.static .item-sub { white-space: normal; }
+  .item.check { cursor: pointer; }
+  .item.check input { width: 20px; height: 20px; accent-color: var(--btn); flex: none; }
+
+  .tpl-field { padding: 12px 14px; }
+  .tpl-field + .tpl-field { border-top: 1px solid var(--sep); }
+  .tpl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .tpl-label { font-size: 13px; font-weight: 600; }
+  .tpl-field input, .tpl-field textarea {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--sep); background: var(--bg);
+    color: var(--text); font: inherit; font-size: 14px; outline: none; resize: none; overflow: hidden; }
+  .tpl-field input:focus, .tpl-field textarea:focus { border-color: var(--btn); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; padding: 3px 7px;
+          border-radius: 6px; border: 1px solid var(--sep); color: var(--link); }
+  .tpl-meta { font-size: 11.5px; color: var(--hint); }
+  .badge.custom { background: transparent; color: var(--btn); border: 1px solid var(--btn); }
+  .preview { background: var(--card); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px;
+             white-space: pre-wrap; word-break: break-word; font-size: 13.5px; line-height: 1.45; }
+  .preview pre { margin: 4px 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); white-space: pre-wrap;
+                 font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .preview code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .seg.wrap { flex-wrap: wrap; }
+  .seg.wrap button { flex: 1 1 30%; }
+
+  .row-toggle + .row-toggle { border-top: 1px solid var(--sep); }
+  .row-toggle .item-sub { white-space: normal; }
+  .field textarea { width: 100%; min-height: 110px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--sep);
+                    background: var(--card); color: var(--text); font: inherit; outline: none; resize: none; overflow: hidden; }
+  .field textarea:focus { border-color: var(--btn); }
+  .result.warn { background: rgba(209, 138, 0, 0.14); color: var(--warn); }
+  .token { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--sep); background: var(--bg);
+           color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .token-card { padding: 12px 14px; }
+  .token-card .actions { margin: 10px 0 0; }
+  .item.static .item-name { white-space: normal; }
+  .sensor-actions { display: flex; gap: 16px; margin-top: 8px; }
+
+  #toast { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
+           max-width: 608px; margin: 0 auto; padding: 12px 14px; border-radius: 10px; color: #fff;
+           background: rgba(30, 32, 38, 0.94); font-size: 14px; opacity: 0; transform: translateY(8px);
+           transition: opacity 0.2s, transform 0.2s; pointer-events: none; z-index: 10; }
+  #toast.show { opacity: 1; transform: none; }
+  #toast.err { background: var(--down); }
+</style>
+</head>
+<body>
+<div id="app"><div class="center">Loading…</div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+  'use strict';
+
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const app = document.getElementById('app');
+  const REFRESH_MS = 15000;
+  const MAINTENANCE_OPTIONS = [[60, '1 h'], [240, '4 h'], [1440, '24 h'], [4320, '3 d']];
+
+  const state = {
+    data: null, error: null, view: 'list', id: null, busy: false,
+    form: null, formError: null, testResult: null, checkResult: null, mntMinutes: 60,
+    hist: { id: null, range: '24h', data: null, error: null },   // node history in the detail view
+    inc: { days: 30, items: null, error: null },                 // incident log
+    sch: { items: null, error: null },                           // maintenance schedule
+    schForm: null, schError: null,
+    users: { items: null, error: null },                         // users and access requests (admin)
+    accessReq: null,                                             // "access required" screen: { status, canRequest }
+    reorder: false,                                              // node reorder mode (admin)
+    notif: { groups: null, error: null },                        // notification categories (admin)
+    msg: null,                                                   // messages to users (admin)
+    sens: null,                                                  // traffic sensors (admin)
+  };
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (ts) => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+  const dur = (ms) => {
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return `${Math.max(1, Math.round(ms / 1000))} s`;
+    const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+    return [d && `${d} d`, h && `${h} h`, m && `${m} min`].filter(Boolean).join(' ');
+  };
+  const pct = (v) => (v == null ? 'n/a' : `${(v * 100).toFixed(2)}%`);
+  const haptic = (type) => { try { tg.HapticFeedback.notificationOccurred(type); } catch (e) { /* not in Telegram */ } };
+  const supports = (v) => !!(tg && tg.isVersionAtLeast && tg.isVersionAtLeast(v));
+
+  const STATUS = {
+    up: { label: 'OPERATIONAL', cls: 'ok' },
+    unstable: { label: 'UNSTABLE', cls: 'warn' },   // failures below the alert threshold
+    degraded: { label: 'DEGRADED', cls: 'warn' },   // high latency
+    down: { label: 'UNAVAILABLE', cls: 'down' },
+    maintenance: { label: 'MAINTENANCE', cls: 'maint' },
+    unknown: { label: 'PENDING', cls: 'muted' },
+  };
+
+  const targetText = (r) => (r.type === 'http' ? r.url : r.type === 'tcp' ? `${r.host}:${r.port}` : r.host);
+  const isMuted = (id) => !!(state.data && (state.data.me.mutedNotifications || []).includes(id));
+  const BACK = '<div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>';
+  const loading = (error) => `${BACK}<div class="center">${error ? esc(error) : 'Loading…'}</div>`;
+
+  /** How subscribers learn about planned maintenance, given the muted notification categories. */
+  function announceNote() {
+    const notice = state.data.monitor.maintenanceNoticeMinutes;
+    const reminder = !isMuted('maintenanceReminder') && notice > 0;
+    if (!isMuted('maintenanceScheduled')) {
+      return `An announcement is sent to subscribers as soon as a window is scheduled${reminder ? `, and a reminder ${notice} min before it starts` : ''}.`;
+    }
+    return reminder
+      ? `Announcements are muted in notification settings: subscribers receive only a reminder ${notice} min before the window starts (immediately, if it starts sooner).`
+      : 'Announcements and reminders are muted in notification settings: subscribers are not informed in advance.';
+  }
+
+  let toastTimer;
+  function toast(text, kind) {
+    const el = document.getElementById('toast');
+    el.textContent = text;
+    el.className = `show ${kind === 'err' ? 'err' : ''}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = ''; }, 3200);
+  }
+
+  function confirmDialog(text) {
+    return new Promise((resolve) => {
+      if (supports('6.2')) tg.showConfirm(text, (ok) => resolve(ok));
+      else resolve(window.confirm(text));
+    });
+  }
+
+  async function api(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      headers: Object.assign({ Authorization: `tma ${tg.initData}` }, body ? { 'Content-Type': 'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || `Request failed (HTTP ${res.status})`);
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  async function load() {
+    try {
+      state.data = await api('GET', '/api/state');
+      state.error = null;
+      state.accessReq = null;
+    } catch (e) {
+      // No access: show the request screen instead of an error.
+      if (e.data && e.data.code === 'access_required') { state.accessReq = e.data; state.data = null; }
+      else state.error = e.message;
+    }
+    if (state.view === 'detail' && !current()) state.view = 'list';
+    render();
+  }
+
+  const current = () => state.data && state.data.resources.find((r) => r.id === state.id);
+
+  async function run(fn) {
+    if (state.busy) return;
+    state.busy = true;
+    render();
+    try { await fn(); } catch (e) { haptic('error'); toast(e.message, 'err'); }
+    state.busy = false;
+    render();
+  }
+
+  // ── Summary ──────────────────────────────────────────────────────────────
+  function overview(resources) {
+    const count = (st) => resources.filter((r) => r.status === st).length;
+    const down = count('down');
+    const maint = count('maintenance');
+    const active = resources.length - maint;
+    const degraded = count('degraded');
+    const operational = count('up') + count('unstable') + degraded;
+    let title, cls, severity;
+    if (!resources.length) { title = 'NO EXIT NODES CONFIGURED'; cls = 'muted'; severity = 'NONE'; }
+    else if (down === 0 && degraded) {
+      title = `DEGRADED PERFORMANCE — ${degraded} OF ${active} EXIT NODES`; cls = 'warn'; severity = 'SEV-3 / MINOR';
+    } else if (down === 0) { title = 'ALL SYSTEMS OPERATIONAL'; cls = count('unstable') ? 'warn' : 'ok'; severity = 'NONE'; }
+    else if (down === active) { title = 'MAJOR OUTAGE — ALL ACTIVE EXIT NODES UNAVAILABLE'; cls = 'down'; severity = 'SEV-1 / CRITICAL'; }
+    else {
+      title = `DEGRADED — ${down} OF ${active} UNAVAILABLE`; cls = 'down';
+      severity = down * 2 >= active ? 'SEV-2 / MAJOR' : 'SEV-3 / MINOR';
+    }
+    return { title, cls, severity, down, maint, operational, total: resources.length };
+  }
+
+  // ── Views ────────────────────────────────────────────────────────────────
+  function viewList() {
+    const { me, monitor, resources, generatedAt } = state.data;
+    const o = overview(resources);
+    const items = resources.map((r) => {
+      const st = STATUS[r.status] || STATUS.unknown;
+      // The sensor result goes first so it is not cut off together with a long address.
+      const sub = [r.traffic ? (r.traffic.ok ? 'Traffic verified' : 'Traffic not passing') : null,
+        r.method, me.isAdmin ? targetText(r) : null].filter(Boolean).join(' · ');
+      let meta = '';
+      if (r.status === 'down') meta = `${dur(Date.now() - r.since)}${r.ack ? ' · ACK' : ''}`;
+      else if (r.status === 'maintenance') meta = `until ${fmt(r.maintenance.until).slice(5, 16)}`;
+      else if (r.lastMs != null) meta = `${Math.round(r.lastMs)} ms${r.status === 'degraded' ? ' · slow' : ''}`;
+      if (state.reorder) {
+        // Reorder mode: up/down arrows instead of opening the detail view.
+        const i = resources.indexOf(r);
+        const dis = state.busy ? 'disabled' : '';
+        return `
+        <div class="item static">
+          <span class="dot ${st.cls}"></span>
+          <span class="item-main">
+            <span class="item-name" style="display:block">${esc(r.name)}</span>
+            <span class="item-sub" style="display:block">${esc(sub)}</span>
+          </span>
+          <span class="move">
+            <button class="move-btn" data-action="move" data-id="${esc(r.id)}" data-dir="-1" aria-label="Move ${esc(r.name)} up" ${i === 0 ? 'disabled' : dis}>↑</button>
+            <button class="move-btn" data-action="move" data-id="${esc(r.id)}" data-dir="1" aria-label="Move ${esc(r.name)} down" ${i === resources.length - 1 ? 'disabled' : dis}>↓</button>
+          </span>
+        </div>`;
+      }
+      return `
+        <button class="item" data-action="open" data-id="${esc(r.id)}">
+          <span class="dot ${st.cls}"></span>
+          <span class="item-main">
+            <span class="item-name" style="display:block">${esc(r.name)}</span>
+            <span class="item-sub" style="display:block">${esc(sub)}</span>
+          </span>
+          <span class="item-side">
+            <span class="badge ${st.cls}">${st.label}</span>
+            <span class="item-meta">${esc(meta)}</span>
+          </span>
+          <span class="chev">›</span>
+        </button>`;
+    }).join('');
+
+    return `
+      <header class="top">
+        <div>
+          <div class="title">Egress Sentinel</div>
+          <div class="sub">Node ${esc(monitor.name)} · Administrator ${esc(monitor.adminName)}</div>
+        </div>
+        <span class="role ${me.isAdmin ? 'admin' : ''}">${me.isAdmin ? 'ADMINISTRATOR' : 'VIEWER'}</span>
+      </header>
+
+      <section class="banner ${o.cls}">
+        <div class="banner-title">${esc(o.title)}</div>
+        <div class="banner-sub">Severity ${esc(o.severity)} · Report time ${fmt(generatedAt)}</div>
+      </section>
+
+      <section class="tiles">
+        <div class="tile ok"><div class="tile-num">${o.operational}</div><div class="tile-label">Operational</div></div>
+        <div class="tile down"><div class="tile-num">${o.down}</div><div class="tile-label">Unavailable</div></div>
+        <div class="tile maint"><div class="tile-num">${o.maint}</div><div class="tile-label">Maintenance</div></div>
+        <div class="tile"><div class="tile-num">${o.total}</div><div class="tile-label">Total</div></div>
+      </section>
+
+      ${plannedCard(state.data.schedules)}
+
+      <div class="section-head">
+        <span>MONITORED EXIT NODES</span>
+        ${me.isAdmin ? `<span class="head-actions">
+          ${resources.length > 1 ? `<button class="btn-small" data-action="reorder">${state.reorder ? 'Done' : 'Reorder'}</button>` : ''}
+          ${state.reorder ? '' : '<button class="btn-small" data-action="add">+ Add exit node</button>'}
+        </span>` : ''}
+      </div>
+      <div class="card">
+        ${items || `<div class="empty">No exit nodes are configured.${me.isAdmin ? ' Use “Add exit node” to place an exit node under monitoring.' : ''}</div>`}
+      </div>
+
+      <div class="section-head"><span>NOTIFICATIONS</span></div>
+      <div class="card">
+        <div class="row-toggle">
+          <div class="item-main">
+            <div class="item-name">Incident notifications</div>
+            <div class="item-sub">Deliver outage and maintenance notifications to your private chat with the bot</div>
+          </div>
+          <button class="switch ${me.subscribed ? 'on' : ''}" data-action="toggle-sub" role="switch"
+                  aria-checked="${me.subscribed}" aria-label="Incident notifications" ${state.busy ? 'disabled' : ''}></button>
+        </div>
+      </div>
+
+      <div class="section-head"><span>MONITORING PARAMETERS</span></div>
+      <div class="card">
+        <div class="kv"><span class="kv-k">Check interval</span><span class="kv-v">${monitor.intervalSeconds} s</span></div>
+        <div class="kv"><span class="kv-k">Response timeout</span><span class="kv-v">${monitor.timeoutSeconds} s</span></div>
+        <div class="kv"><span class="kv-k">Outage threshold</span><span class="kv-v">${monitor.failThreshold} consecutive failures</span></div>
+        <div class="kv"><span class="kv-k">Latency threshold</span><span class="kv-v">${monitor.latencyThresholdMs > 0 ? `${monitor.latencyThresholdMs} ms · ${monitor.latencyChecks} checks` : 'disabled'}</span></div>
+        ${me.isAdmin ? `<div class="kv"><span class="kv-k">Repeat notices</span><span class="kv-v">${monitor.remindEveryMinutes > 0 ? `every ${monitor.remindEveryMinutes} min` : 'disabled'}</span></div>` : ''}
+      </div>
+
+      <div class="section-head"><span>REPORTS</span></div>
+      <div class="card">
+        ${navItem('incidents', 'Incident log', 'Outages and latency incidents with durations')}
+        ${navItem('schedules', 'Maintenance schedule', me.isAdmin ? 'Plan maintenance windows and announce them in advance' : 'Upcoming and past maintenance windows')}
+      </div>
+
+      ${me.isAdmin ? `
+      <div class="section-head"><span>ADMINISTRATION</span></div>
+      ${isMuted('alert') || isMuted('recovered')
+        ? '<div class="result err">Outage notifications are muted in notification settings. Subscribers are not informed of outages.</div>' : ''}
+      <div class="card">
+        ${navItem('users', `Users &amp; access${me.pendingRequests ? ` <span class="badge down">${me.pendingRequests} NEW</span>` : ''}`,
+          me.pendingRequests ? `${me.pendingRequests} access request(s) awaiting review` : 'Approve access requests and manage subscribers')}
+        ${navItem('messages', 'Messages to users', 'Send a notice to selected users on behalf of the administrator')}
+        ${navItem('notif', 'Notification settings', me.mutedNotifications.length
+          ? `${me.mutedNotifications.length} ${me.mutedNotifications.length === 1 ? 'category' : 'categories'} muted`
+          : 'All notification categories are enabled')}
+        ${(() => {
+          const bad = me.sensors.filter((s) => s.status === 'offline' || s.status === 'impaired').length;
+          return navItem('sensors', `Traffic sensors${bad ? ` <span class="badge down">${bad} ${bad === 1 ? 'ISSUE' : 'ISSUES'}</span>` : ''}`,
+            me.sensors.length
+              ? `${me.sensors.length} registered · ${me.sensors.filter((s) => s.status === 'online').length} online`
+              : 'Verify that traffic actually passes through the exit nodes (VLESS)');
+        })()}
+        <button class="item" data-action="templates">
+          <span class="item-main">
+            <span class="item-name" style="display:block">Notification templates</span>
+            <span class="item-sub" style="display:block">Edit the wording of incident notifications</span>
+          </span>
+          <span class="chev">›</span>
+        </button>
+      </div>` : ''}
+
+      <div class="footer">Signed in as ${esc(me.name)} · Automatic refresh every ${REFRESH_MS / 1000} s</div>`;
+  }
+
+  function viewDetail() {
+    const r = current();
+    const { me, monitor } = state.data;
+    const st = STATUS[r.status] || STATUS.unknown;
+    const rows = [
+      r.incidentId && ['Incident ID', `<span class="mono">${esc(r.incidentId)}</span>`],
+      ['Status', `<span class="badge ${st.cls}">${st.label}</span>`],
+      ['Check method', esc(r.method)],
+      me.isAdmin && ['Target', `<span class="mono">${esc(targetText(r))}</span>`],
+      me.isAdmin && ['Node ID', `<span class="mono">${esc(r.id)}</span>`],
+      ['Response time', r.lastMs != null ? `${Math.round(r.lastMs)} ms` : '—'],
+      r.cause === 'traffic' && r.status === 'down' && ['Direct check', 'Passing — the exit node responds'],
+      r.traffic && ['Traffic (VLESS)', `${r.traffic.ok
+        ? `<span class="badge ok">PASSING</span> ${r.traffic.ms != null ? `${r.traffic.ms} ms` : ''}`
+        : '<span class="badge down">NOT PASSING</span>'}<br>sensor ${esc(r.traffic.sensors.join(', '))} · ${fmt(r.traffic.at).slice(11)}`],
+      me.isAdmin && r.traffic && r.traffic.exitIp && ['Exit IP', `<span class="mono">${esc(r.traffic.exitIp)}</span>`],
+      me.isAdmin && !r.trafficCheck && ['Traffic (VLESS)', 'Verification disabled'],
+      ['Latency threshold', r.latencyThreshold > 0
+        ? `${r.latencyThreshold} ms${r.latencyCustom ? ' (custom)' : ''}` : `disabled${r.latencyCustom ? ' (custom)' : ''}`],
+      r.latency && ['Latency incident', `<span class="mono">${esc(r.latency.incidentId)}</span><br>since ${fmt(r.latency.since)} · peak ${Math.round(r.latency.maxMs)} ms`],
+      r.lastError && ['Last error', esc(r.lastError)],
+      r.status !== 'maintenance' && ['Consecutive failures', `${r.fails} / ${monitor.failThreshold}`],
+      r.since && [r.status === 'down' ? 'Outage start' : 'Status since', `${fmt(r.since)} (${dur(Date.now() - r.since)})`],
+      r.declaredAt && ['Declared', fmt(r.declaredAt)],
+      r.status === 'down' && ['Notices issued', String(r.notices)],
+      r.status === 'down' && ['Acknowledged', r.ack ? `${esc(r.ack.by)}<br>${fmt(r.ack.at)}` : 'NO'],
+      r.maintenance && ['Maintenance until', fmt(r.maintenance.until)],
+      r.maintenance && ['Authorised by', esc(r.maintenance.by)],
+      r.maintenance && r.maintenance.reason && ['Reason', esc(r.maintenance.reason)],
+      ['Last success', fmt(r.lastOkAt)],
+      ['Last check', fmt(r.lastCheckAt)],
+      ['Availability (24 h)', pct(r.availability24h)],
+      ['Availability (30 d)', pct(r.availability)],
+    ].filter(Boolean);
+
+    let actions = '';
+    if (me.isAdmin) {
+      const dis = state.busy ? 'disabled' : '';
+      const ackBtn = r.status === 'down' && !r.ack
+        ? `<button class="btn primary" data-action="ack" ${dis}>Acknowledge incident</button>` : '';
+      const mnt = r.status === 'maintenance'
+        ? `<button class="btn" data-action="mnt-end" ${dis}>Close maintenance window</button>`
+        : `<div class="seg">${MAINTENANCE_OPTIONS.map(([m, l]) =>
+            `<button data-action="mnt-pick" data-min="${m}" class="${state.mntMinutes === m ? 'on' : ''}">${l}</button>`).join('')}</div>
+           <button class="btn" data-action="mnt-start" ${dis}>Open maintenance window now</button>
+           <button class="btn" data-action="schedule-new" data-node="${esc(r.id)}" ${dis}>Schedule maintenance…</button>`;
+      const check = state.checkResult
+        ? `<div class="result ${state.checkResult.ok ? 'ok' : 'err'}">${state.checkResult.ok
+            ? `Check passed · response time ${state.checkResult.ms} ms`
+            : `Check failed · ${esc(state.checkResult.error)}`}</div>` : '';
+      actions = `
+        <div class="section-head"><span>INCIDENT MANAGEMENT</span></div>
+        <div class="actions">${ackBtn}${mnt}</div>
+        <div class="section-head"><span>ADMINISTRATION</span></div>
+        <div class="actions">
+          ${check}
+          <button class="btn" data-action="check-now" ${dis}>Run check now</button>
+          <button class="btn" data-action="edit" ${dis}>Edit exit node</button>
+          <button class="btn danger" data-action="delete" ${dis}>Remove exit node</button>
+        </div>`;
+    } else {
+      actions = '<p class="note">Administrative actions are restricted to the responsible administrator.</p>';
+    }
+
+    return `
+      <div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+      <div class="detail-head"><h1>${esc(r.name)}</h1></div>
+      <div class="card">${rows.map(([k, v]) => `<div class="kv"><span class="kv-k">${k}</span><span class="kv-v">${v}</span></div>`).join('')}</div>
+      ${historySection()}
+      ${actions}`;
+  }
+
+  // ── History (detail view) ────────────────────────────────────────────────
+  const RANGE_OPTIONS = [['24h', '24 h'], ['7d', '7 days'], ['30d', '30 days']];
+
+  function historySection() {
+    const h = state.hist;
+    const seg = `<div class="seg" role="tablist" aria-label="History range">${RANGE_OPTIONS.map(([k, l]) =>
+      `<button data-action="range" data-range="${k}" class="${h.range === k ? 'on' : ''}" role="tab" aria-selected="${h.range === k}">${l}</button>`).join('')}</div>`;
+    if (!h.data || h.data.range !== h.range || h.id !== state.id) {
+      return `<div class="section-head"><span>HISTORY</span></div>${seg}
+        <div class="card"><div class="empty">${h.error ? esc(h.error) : 'Loading history…'}</div></div>`;
+    }
+    const d = h.data;
+    const s = d.summary;
+    const tile = (label, value) => `<div class="stat"><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div>`;
+    const incidents = d.incidents.length
+      ? d.incidents.map(incidentRow).join('')
+      : '<div class="empty">No incidents in this period.</div>';
+    const rows = [...d.points].reverse().slice(0, 400).map((p) => `<tr>
+        <td>${fmt(p.t).slice(0, 16)}</td><td>${pct(p.availability)}</td>
+        <td>${p.avgMs == null ? '—' : `${p.avgMs} ms`}</td><td>${p.maxMs == null ? '—' : `${p.maxMs} ms`}</td><td>${p.checks}</td></tr>`).join('');
+    return `
+      <div class="section-head"><span>HISTORY</span></div>
+      ${seg}
+      <div class="stats">
+        ${tile('Availability', pct(s.availability))}
+        ${tile('Avg response', s.avgMs == null ? '—' : `${s.avgMs} ms`)}
+        ${tile('Peak response', s.maxMs == null ? '—' : `${s.maxMs} ms`)}
+        ${tile('Downtime', s.downtimeMs ? dur(s.downtimeMs) : '0')}
+        ${tile('Incidents', String(s.incidents))}
+      </div>
+      <div class="card chart-card">
+        <div class="chart-title">Response time, ms <span class="chart-sub">average per ${stepLabel(d.step)}</span></div>
+        ${d.points.length ? '<div class="chart" data-chart="latency"></div>' : '<div class="empty">No data recorded for this period yet.</div>'}
+      </div>
+      <div class="card chart-card">
+        <div class="chart-title">Availability</div>
+        ${d.points.length ? `<div class="chart" data-chart="strip"></div>
+        <div class="legend">
+          <span><i class="key ok"></i>≥ 99%</span><span><i class="key warn"></i>Below 99%</span>
+          <span><i class="key down"></i>Unavailable</span><span><i class="key none"></i>No data</span>
+        </div>` : '<div class="empty">No data recorded for this period yet.</div>'}
+      </div>
+      ${d.points.length ? `<details class="card table-view"><summary>Data table (${d.points.length} intervals)</summary>
+        <div class="table-wrap"><table><thead><tr><th>Interval start</th><th>Availability</th><th>Avg</th><th>Peak</th><th>Checks</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></details>` : ''}
+      <div class="section-head"><span>INCIDENTS IN THIS PERIOD</span></div>
+      <div class="card">${incidents}</div>`;
+  }
+
+  const stepLabel = (ms) => (ms >= 3600000 ? `${ms / 3600000} h` : `${ms / 60000} min`);
+
+  async function loadHistory() {
+    const id = state.id;
+    const range = state.hist.range;
+    try {
+      const data = await api('GET', `/api/history/${id}?range=${range}`);
+      if (state.id === id && state.hist.range === range) Object.assign(state.hist, { id, data, error: null });
+    } catch (e) {
+      state.hist.error = e.message;
+    }
+    if (state.view === 'detail') render();
+  }
+
+  // ── Charts (hand-drawn SVG: the CSP only allows our own and Telegram's scripts) ──
+  const svgNs = 'http://www.w3.org/2000/svg';
+  const niceMax = (v) => {
+    if (v <= 0) return 10;
+    const mag = 10 ** Math.floor(Math.log10(v));
+    for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * mag >= v) return m * mag;
+    return 10 * mag;
+  };
+  const tickLabel = (t, range) => {
+    const d = new Date(t);
+    return range === '24h' ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`;
+  };
+
+  function showTip(box, html, x, y) {
+    let tip = box.querySelector('.tip');
+    if (!tip) { tip = document.createElement('div'); tip.className = 'tip'; box.appendChild(tip); }
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+    const w = tip.offsetWidth;
+    tip.style.left = `${Math.max(0, Math.min(box.clientWidth - w, x - w / 2))}px`;
+    tip.style.top = `${Math.max(0, y - tip.offsetHeight - 10)}px`;
+  }
+  const hideTip = (box) => { const tip = box.querySelector('.tip'); if (tip) tip.style.display = 'none'; };
+
+  function drawLatency(box, d) {
+    const W = box.clientWidth;
+    const H = 170;
+    const m = { l: 40, r: 10, t: 12, b: 24 };
+    const pw = W - m.l - m.r;
+    const ph = H - m.t - m.b;
+    const pts = d.points.filter((p) => p.avgMs != null);
+    const dataMax = Math.max(1, ...pts.map((p) => p.avgMs));
+    // Put the threshold on the scale only if it is comparable to the data; otherwise the chart flattens near zero.
+    const thrOnScale = d.threshold > 0 && d.threshold <= dataMax * 2;
+    const yMax = niceMax(Math.max(dataMax, thrOnScale ? d.threshold : 0) * 1.1);
+    const x = (t) => m.l + ((t + d.step / 2 - d.from) / (d.to - d.from)) * pw;
+    const y = (v) => m.t + ph - (v / yMax) * ph;
+
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Average response time chart">`;
+    for (let i = 0; i <= 4; i++) {
+      const v = (yMax / 4) * i;
+      svg += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>`
+        + `<text class="axis" x="${m.l - 6}" y="${y(v) + 3.5}" text-anchor="end">${Math.round(v)}</text>`;
+    }
+    const tickEvery = { '24h': 6 * 3600000, '7d': 86400000, '30d': 7 * 86400000 }[d.range];
+    const first = Math.ceil(d.from / tickEvery) * tickEvery;
+    for (let t = first; t <= d.to; t += tickEvery) {
+      const tx = m.l + ((t - d.from) / (d.to - d.from)) * pw;
+      if (tx < m.l + 14 || tx > W - m.r - 14) continue;
+      svg += `<text class="axis" x="${tx}" y="${H - 6}" text-anchor="middle">${tickLabel(t, d.range)}</text>`;
+    }
+    // Unbroken segments: neighbours further apart than one step mean a gap (the monitor was not running).
+    const segs = [];
+    let seg = [];
+    for (const p of d.points) {
+      const prev = seg[seg.length - 1];
+      if (p.avgMs == null || (prev && p.t - prev.t > d.step * 1.5)) { if (seg.length) segs.push(seg); seg = []; }
+      if (p.avgMs != null) seg.push(p);
+    }
+    if (seg.length) segs.push(seg);
+    for (const s of segs) {
+      const line = s.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.avgMs).toFixed(1)}`).join('');
+      svg += `<path class="area" d="${line}L${x(s[s.length - 1].t).toFixed(1)},${y(0)}L${x(s[0].t).toFixed(1)},${y(0)}Z"/>`
+        + `<path class="line" d="${line}"/>`;
+      if (s.length === 1) svg += `<circle class="pt" cx="${x(s[0].t)}" cy="${y(s[0].avgMs)}" r="3"/>`;
+    }
+    if (thrOnScale) {
+      svg += `<line class="thr" x1="${m.l}" x2="${W - m.r}" y1="${y(d.threshold)}" y2="${y(d.threshold)}"/>`
+        + `<text class="axis" x="${W - m.r}" y="${y(d.threshold) - 4}" text-anchor="end">threshold ${d.threshold} ms</text>`;
+    }
+    svg += `<line class="cross" x1="0" x2="0" y1="${m.t}" y2="${m.t + ph}" style="display:none"/>`
+      + `<circle class="hover-dot" r="4" style="display:none"/>`
+      + `<rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;
+    box.innerHTML = svg + (d.threshold > 0 && !thrOnScale
+      ? `<div class="chart-note">Threshold ${d.threshold} ms is above the plotted range.</div>` : '');
+
+    const cross = box.querySelector('.cross');
+    const dot = box.querySelector('.hover-dot');
+    const move = (ev) => {
+      const rect = box.getBoundingClientRect();
+      const px = ev.clientX - rect.left;
+      let best = null;
+      for (const p of d.points) if (!best || Math.abs(x(p.t) - px) < Math.abs(x(best.t) - px)) best = p;
+      if (!best) return;
+      const bx = x(best.t);
+      cross.setAttribute('x1', bx); cross.setAttribute('x2', bx); cross.style.display = '';
+      if (best.avgMs != null) { dot.setAttribute('cx', bx); dot.setAttribute('cy', y(best.avgMs)); dot.style.display = ''; }
+      else dot.style.display = 'none';
+      showTip(box, `<b>${fmt(best.t).slice(0, 16)}</b><br>Avg ${best.avgMs == null ? '—' : `${best.avgMs} ms`} · Peak ${best.maxMs == null ? '—' : `${best.maxMs} ms`}<br>Availability ${pct(best.availability)} · ${best.checks} checks`,
+        bx, best.avgMs != null ? y(best.avgMs) : m.t + ph / 2);
+    };
+    const hit = box.querySelector('.hit');
+    hit.addEventListener('pointermove', move);
+    hit.addEventListener('pointerdown', move);
+    hit.addEventListener('pointerleave', () => { cross.style.display = 'none'; dot.style.display = 'none'; hideTip(box); });
+  }
+
+  function drawStrip(box, d) {
+    const W = box.clientWidth;
+    const H = 30;
+    // Merge into at most 60 cells so they keep a gap on a phone screen.
+    const cellMs = { '24h': 30 * 60000, '7d': 4 * 3600000, '30d': 12 * 3600000 }[d.range];
+    const start = Math.floor(d.from / cellMs) * cellMs;
+    const n = Math.ceil((d.to - start) / cellMs);
+    const cells = Array.from({ length: n }, (_, i) => ({ t: start + i * cellMs, checks: 0, ok: 0 }));
+    for (const p of d.points) {
+      const c = cells[Math.floor((p.t - start) / cellMs)];
+      if (c) { c.checks += p.checks; c.ok += Math.round(p.availability * p.checks); }
+    }
+    const gap = 2;
+    const cw = (W - gap * (n - 1)) / n;
+    // One lost check out of hundreds should not colour the interval: "normal" is 99% and above.
+    const cls = (c) => (!c.checks ? 'none' : c.ok / c.checks >= 0.99 ? 'ok' : c.ok === 0 ? 'down' : 'warn');
+    box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Availability by interval">${
+      cells.map((c, i) => `<rect class="cell ${cls(c)}" data-i="${i}" x="${(i * (cw + gap)).toFixed(1)}" y="0" width="${Math.max(1, cw).toFixed(1)}" height="${H}" rx="2"/>`).join('')}</svg>`;
+    const svg = box.querySelector('svg');
+    const move = (ev) => {
+      const rect = box.getBoundingClientRect();
+      const i = Math.min(n - 1, Math.max(0, Math.floor((ev.clientX - rect.left) / (cw + gap))));
+      const c = cells[i];
+      showTip(box, `<b>${fmt(c.t).slice(0, 16)} → ${fmt(c.t + cellMs).slice(11, 16)}</b><br>${c.checks
+        ? `Availability ${pct(c.ok / c.checks)} · ${c.checks} checks` : 'No data (monitor offline)'}`, i * (cw + gap) + cw / 2, 0);
+    };
+    svg.addEventListener('pointermove', move);
+    svg.addEventListener('pointerdown', move);
+    svg.addEventListener('pointerleave', () => hideTip(box));
+  }
+
+  function drawCharts() {
+    const d = state.hist && state.hist.data;
+    if (!d) return;
+    app.querySelectorAll('[data-chart]').forEach((box) => {
+      if (box.dataset.chart === 'latency') drawLatency(box, d);
+      if (box.dataset.chart === 'strip') drawStrip(box, d);
+    });
+  }
+
+  // ── Incident log & maintenance schedule ─────────────────────────────────
+  const END_REASON = {
+    recovered: 'Recovered', maintenance: 'Suspended by maintenance', removed: 'Exit node removed',
+    modified: 'Closed: target changed', superseded: 'Superseded by outage', 'restart-lost': 'Closed after restart',
+  };
+
+  function incidentRow(i) {
+    const kind = i.kind === 'latency' ? { label: 'LATENCY', cls: 'warn' } : { label: 'OUTAGE', cls: 'down' };
+    const end = i.end ?? Date.now();
+    const meta = [
+      `${fmt(i.start).slice(0, 16)} · ${dur(end - i.start)}`,
+      i.end ? (END_REASON[i.endReason] || i.endReason) : 'ONGOING',
+      i.kind === 'latency' && i.maxMs != null ? `peak ${Math.round(i.maxMs)} ms` : null,
+      i.cause === 'traffic' ? 'traffic not passing' : null,
+      i.ack ? `ack ${i.ack.by}` : null,
+    ].filter(Boolean).join(' · ');
+    return `<div class="item static">
+        <span class="item-main">
+          <span class="item-name" style="display:block">${esc(i.nodeName)}</span>
+          <span class="item-sub" style="display:block">${esc(meta)}</span>
+          <span class="item-sub mono" style="display:block">${esc(i.ref)}</span>
+        </span>
+        <span class="item-side"><span class="badge ${i.end ? 'ack' : kind.cls}">${kind.label}</span></span>
+      </div>`;
+  }
+
+  function viewIncidents() {
+    const v = state.inc;
+    const seg = `<div class="seg">${[[7, '7 days'], [30, '30 days'], [90, '90 days']].map(([dd, l]) =>
+      `<button data-action="inc-days" data-days="${dd}" class="${v.days === dd ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    let body = '<div class="empty">Loading…</div>';
+    if (v.error) body = `<div class="empty">${esc(v.error)}</div>`;
+    else if (v.items) body = v.items.length ? v.items.map(incidentRow).join('') : '<div class="empty">No incidents recorded in this period.</div>';
+    const open = v.items ? v.items.filter((i) => !i.end).length : 0;
+    return `
+      <div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+      <div class="detail-head"><h1>Incident log</h1></div>
+      ${seg}
+      ${v.items ? `<p class="note">${v.items.length} incident(s) in the last ${v.days} days${open ? ` · ${open} open` : ''}.</p>` : ''}
+      <div class="card">${body}</div>`;
+  }
+
+  async function loadIncidents() {
+    try {
+      const r = await api('GET', `/api/incidents?days=${state.inc.days}`);
+      Object.assign(state.inc, { items: r.incidents, error: null });
+    } catch (e) { state.inc.error = e.message; }
+    if (state.view === 'incidents') render();
+  }
+
+  const SCHED_STATE = {
+    scheduled: { label: 'SCHEDULED', cls: 'maint' }, active: { label: 'IN PROGRESS', cls: 'warn' },
+    completed: { label: 'COMPLETED', cls: 'ack' }, cancelled: { label: 'CANCELLED', cls: 'ack' },
+  };
+
+  function scheduleRow(s, canManage) {
+    const st = SCHED_STATE[s.state] || SCHED_STATE.completed;
+    const meta = [
+      `${fmt(s.start).slice(0, 16)} → ${fmt(s.end).slice(0, 16)} (${dur(s.end - s.start)})`,
+      s.reason || null,
+      `by ${s.by}`,
+      s.cancelledBy ? `cancelled by ${s.cancelledBy}` : null,
+      s.endedBy ? `ended by ${s.endedBy}` : null,
+      s.missed ? 'missed: monitor was offline' : null,
+    ].filter(Boolean).join(' · ');
+    const action = canManage && s.state === 'scheduled'
+      ? `<button class="btn-small" data-action="sched-cancel" data-sid="${s.id}">Cancel</button>`
+      : canManage && s.state === 'active' ? `<button class="btn-small" data-action="sched-cancel" data-sid="${s.id}">End now</button>` : '';
+    return `<div class="item static">
+        <span class="item-main">
+          <span class="item-name" style="display:block">${esc(s.nodes.map((n) => n.name).join(', ') || '—')}</span>
+          <span class="item-sub" style="display:block">${esc(meta)}</span>
+          <span class="item-sub mono" style="display:block">${esc(s.ref)}</span>
+        </span>
+        <span class="item-side"><span class="badge ${st.cls}">${st.label}</span><span class="item-meta">${action}</span></span>
+      </div>`;
+  }
+
+  function plannedCard(schedules) {
+    if (!schedules || !schedules.length) return '';
+    return `<div class="section-head"><span>PLANNED MAINTENANCE</span></div>
+      <div class="card">${schedules.map((s) => scheduleRow(s, false)).join('')}</div>`;
+  }
+
+  // ── Access (users without approval) & user management (admin) ──────────────
+  function viewAccess() {
+    const a = state.accessReq;
+    const text = {
+      none: 'Access to incident notifications and the monitoring dashboard is granted by the administrator. Submit a request to continue.',
+      pending: 'Your access request has been submitted and is awaiting review by the administrator. You will be notified in the bot chat once a decision has been made.',
+      denied: 'Your previous access request was declined. A new request may be submitted 24 hours after the decision.',
+      revoked: 'Your access has been revoked by the administrator. A new request may be submitted 24 hours after the decision.',
+    }[a.status] || '';
+    return `<div class="center">
+        <div class="title">🔐 Access required</div>
+        <p>${esc(text)}</p>
+        ${a.canRequest ? `<button class="btn primary" data-action="request-access" ${state.busy ? 'disabled' : ''}>Request access</button>` : ''}
+        ${a.status === 'pending' ? '<span class="badge maint">PENDING REVIEW</span>' : ''}
+      </div>`;
+  }
+
+  const USER_STATUS = {
+    pending: { label: 'PENDING', cls: 'down' }, approved: { label: 'APPROVED', cls: 'ok' },
+    denied: { label: 'DECLINED', cls: 'ack' }, revoked: { label: 'REVOKED', cls: 'ack' },
+  };
+
+  function userRow(u) {
+    const st = USER_STATUS[u.status] || USER_STATUS.denied;
+    const me = state.data.me.id === u.id;
+    const meta = [
+      u.username && !u.name.includes(`@${u.username}`) ? `@${u.username}` : null,
+      `ID ${u.id}`,
+      u.status === 'pending' ? `requested ${fmt(u.requestedAt).slice(0, 16)}` : null,
+      u.status === 'approved' ? (u.subscribed ? 'notifications on' : 'notifications off') : null,
+      u.decidedBy && u.status !== 'pending' ? `${st.label.toLowerCase()} by ${u.decidedBy}` : null,
+      u.isAdmin ? 'administrator' : null,
+    ].filter(Boolean).join(' · ');
+    const dis = state.busy ? 'disabled' : '';
+    let buttons = '';
+    if (u.status === 'pending') {
+      buttons = `<button class="btn-small" data-action="user-decide" data-uid="${u.id}" data-decision="approve" ${dis}>Approve</button>
+        <button class="btn-small danger-text" data-action="user-decide" data-uid="${u.id}" data-decision="deny" ${dis}>Deny</button>`;
+    } else if (u.status === 'approved') {
+      buttons = `<button class="btn-small" data-action="messages" data-uid="${u.id}" ${dis}>Message</button>`
+        + (!me && !u.isAdmin
+          ? `<button class="btn-small danger-text" data-action="user-decide" data-uid="${u.id}" data-decision="revoke" ${dis}>Revoke</button>` : '');
+    } else if (u.status === 'denied' || u.status === 'revoked') {
+      buttons = `<button class="btn-small" data-action="user-decide" data-uid="${u.id}" data-decision="approve" ${dis}>Approve</button>`;
+    }
+    return `<div class="item static">
+        <span class="item-main">
+          <span class="item-name" style="display:block">${esc(u.name)}</span>
+          <span class="item-sub" style="display:block">${esc(meta)}</span>
+        </span>
+        <span class="item-side"><span class="badge ${st.cls}">${st.label}</span>
+          <span class="item-meta user-actions">${buttons}</span></span>
+      </div>`;
+  }
+
+  function viewUsers() {
+    const v = state.users;
+    if (!v.items) {
+      return `<div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+        <div class="center">${v.error ? esc(v.error) : 'Loading…'}</div>`;
+    }
+    const group = (st) => v.items.filter((u) => st.includes(u.status));
+    const section = (title, items, empty) => `<div class="section-head"><span>${title}</span></div>
+      <div class="card">${items.length ? items.map(userRow).join('') : `<div class="empty">${empty}</div>`}</div>`;
+    const approved = group(['approved']);
+    return `
+      <div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+      <div class="detail-head"><h1>Users &amp; access</h1></div>
+      <p class="note">Users request access by sending /start to the bot. Approved users receive incident notifications in a private chat
+        and read-only access to this dashboard. Exit node addresses are never disclosed to users.</p>
+      ${section('PENDING REQUESTS', group(['pending']), 'No requests awaiting review.')}
+      ${section(`APPROVED (${approved.length} · ${approved.filter((u) => u.subscribed).length} receiving notifications)`, approved, 'No approved users yet.')}
+      ${section('DECLINED &amp; REVOKED', group(['denied', 'revoked']), 'None.')}`;
+  }
+
+  async function loadUsers() {
+    try {
+      const r = await api('GET', '/api/users');
+      Object.assign(state.users, { items: r.users, error: null });
+    } catch (e) { state.users.error = e.message; }
+    if (state.view === 'users') render();
+  }
+
+  // ── Notification settings (admin) ───────────────────────────────────────
+  function viewNotif() {
+    const v = state.notif;
+    if (!v.groups) return loading(v.error);
+    const dis = state.busy ? 'disabled' : '';
+    const items = v.groups.flatMap((g) => g.items);
+    const off = (id) => items.some((i) => i.id === id && !i.enabled);
+    const critical = items.filter((i) => i.critical && !i.enabled);
+    const notice = state.data.monitor.maintenanceNoticeMinutes;
+    const warnings = [
+      critical.length && `<div class="result err">${esc(critical.map((i) => `“${i.label}”`).join(' and '))} ${critical.length > 1 ? 'are' : 'is'} muted. Subscribers are not informed of outages.</div>`,
+      off('maintenanceScheduled') && (off('maintenanceReminder') || notice <= 0)
+        && '<div class="result warn">Maintenance announcements and reminders are both muted: subscribers are not informed of planned maintenance in advance.</div>',
+    ].filter(Boolean).join('');
+    const groups = v.groups.map((g) => `
+      <div class="section-head"><span>${esc(g.label.toUpperCase())} · ${esc(g.audience.toUpperCase())}</span></div>
+      <div class="card">${g.items.map((i) => {
+        let hint = i.hint;
+        if (i.id === 'maintenanceScheduled' && !i.enabled && notice > 0 && !off('maintenanceReminder')) {
+          hint += `. While muted, subscribers receive the reminder ${notice} min before the window (immediately, if it starts sooner).`;
+        }
+        return `<div class="row-toggle">
+            <div class="item-main"><div class="item-name">${esc(i.label)}</div><div class="item-sub">${esc(hint)}</div></div>
+            <button class="switch ${i.enabled ? 'on' : ''}" data-action="notif-toggle" data-nid="${i.id}" role="switch"
+                    aria-checked="${i.enabled}" aria-label="${esc(i.label)}" ${dis}></button>
+          </div>`;
+      }).join('')}</div>`).join('');
+    return `${BACK}
+      <div class="detail-head"><h1>Notification settings</h1></div>
+      <p class="note">A muted category is not delivered to anyone, neither subscribers nor administrators. Monitoring, the incident log
+        and maintenance windows continue as usual; only the messages are withheld. Changes take effect immediately.</p>
+      ${warnings}
+      ${groups}`;
+  }
+
+  async function loadNotif() {
+    try {
+      const r = await api('GET', '/api/notifications');
+      Object.assign(state.notif, { groups: r.groups, error: null });
+    } catch (e) { state.notif.error = e.message; }
+    if (state.view === 'notif') render();
+  }
+
+  // ── Messages to users (admin) ───────────────────────────────────────────
+  const MAX_MESSAGE = 3500;
+
+  function sentRow(m) {
+    const failed = m.recipients.filter((r) => !r.ok);
+    const badge = !failed.length ? ['ok', 'DELIVERED'] : m.delivered ? ['warn', 'PARTIAL'] : ['down', 'NOT DELIVERED'];
+    return `<div class="item static">
+        <span class="item-main">
+          <span class="item-name" style="display:block">${esc(m.subject || m.text.split('\n')[0])}</span>
+          <span class="item-sub" style="display:block">${esc(`${fmt(m.at).slice(0, 16)} · by ${m.by} · delivered ${m.delivered} of ${m.recipients.length}`)}</span>
+          <span class="item-sub" style="display:block;white-space:normal">To: ${esc(m.recipients.map((r) => r.name).join(', '))}</span>
+          ${failed.length ? `<span class="item-sub danger-text" style="display:block;white-space:normal">Not delivered: ${
+            esc(failed.map((r) => `${r.name} (${r.error})`).join('; '))}</span>` : ''}
+          <span class="item-sub mono" style="display:block">${esc(m.ref)}</span>
+        </span>
+        <span class="item-side"><span class="badge ${badge[0]}">${badge[1]}</span></span>
+      </div>`;
+  }
+
+  function viewMessages() {
+    const v = state.msg;
+    if (!v.recipients) return loading(v.error);
+    const dis = state.busy ? 'disabled' : '';
+    const selected = new Set(v.ids);
+    const people = v.recipients.map((u) => `
+      <label class="item check">
+        <input type="checkbox" data-msg-pick="${u.id}" aria-label="${esc(u.name)}" ${selected.has(u.id) ? 'checked' : ''}>
+        <span class="item-main"><span class="item-name" style="display:block">${esc(u.name)}</span>
+        <span class="item-sub" style="display:block">${esc([
+          u.username && !u.name.includes(`@${u.username}`) ? `@${u.username}` : null,
+          u.isAdmin ? 'administrator' : null,
+          u.subscribed ? 'notifications on' : 'notifications off',
+        ].filter(Boolean).join(' · '))}</span></span>
+      </label>`).join('');
+    const n = selected.size;
+    return `${BACK}
+      <div class="detail-head"><h1>Messages to users</h1></div>
+      <p class="note">The message is delivered to the private chat of each selected user as a notice from the administrator.
+        It is sent regardless of notification settings. Delivered messages cannot be recalled.</p>
+      <div class="section-head"><span>RECIPIENTS · ${n} SELECTED</span>
+        ${v.recipients.length ? `<button class="btn-small" data-action="msg-all">${n === v.recipients.length ? 'Clear' : 'Select all'}</button>` : ''}</div>
+      <div class="card">${people || '<div class="empty">No approved users yet.</div>'}</div>
+      <label class="field">
+        <span class="field-label">Subject (optional)</span>
+        <input data-msg="subject" value="${esc(v.subject)}" maxlength="120" placeholder="Planned network changes" autocomplete="off">
+      </label>
+      <label class="field">
+        <span class="field-label">Message</span>
+        <textarea data-msg="text" maxlength="${MAX_MESSAGE}" placeholder="Text of the notice">${esc(v.text)}</textarea>
+        <span class="field-hint" id="msg-count">${v.text.length} / ${MAX_MESSAGE} characters · plain text, line breaks are preserved</span>
+      </label>
+      ${v.formError ? `<div class="result err">${esc(v.formError)}</div>` : ''}
+      ${v.previewHtml ? `<div class="preview">${v.previewHtml}</div>` : ''}
+      <div class="actions">
+        <button class="btn" data-action="msg-preview" ${dis}>Show preview</button>
+        <button class="btn primary" data-action="msg-send" ${dis || (n ? '' : 'disabled')}>${n ? `Send to ${n} user${n === 1 ? '' : 's'}` : 'Select recipients'}</button>
+      </div>
+      <div class="section-head"><span>SENT MESSAGES</span></div>
+      <div class="card">${v.sent.length ? v.sent.map(sentRow).join('') : '<div class="empty">No messages have been sent yet.</div>'}</div>`;
+  }
+
+  async function loadMessages() {
+    try {
+      const r = await api('GET', '/api/messages');
+      const ids = new Set(r.recipients.map((u) => u.id));
+      // Recipients who lost access meanwhile are deselected.
+      Object.assign(state.msg, { recipients: r.recipients, sent: r.sent, error: null, ids: state.msg.ids.filter((id) => ids.has(id)) });
+    } catch (e) { state.msg.error = e.message; }
+    if (state.view === 'messages') render();
+  }
+
+  const msgDirty = () => state.msg && (state.msg.text.trim() || state.msg.subject.trim());
+
+  // ── Traffic sensors (admin) ─────────────────────────────────────────────
+  const SENSOR_STATUS = {
+    online: { label: 'ONLINE', cls: 'ok' }, impaired: { label: 'IMPAIRED', cls: 'warn' },
+    offline: { label: 'OFFLINE', cls: 'down' }, awaiting: { label: 'AWAITING REPORT', cls: 'muted' },
+  };
+
+  function sensorRow(s) {
+    const st = SENSOR_STATUS[s.status] || SENSOR_STATUS.awaiting;
+    const rep = s.report;
+    const dis = state.busy ? 'disabled' : '';
+    const meta = [
+      rep ? `last report ${dur(rep.ageMs)} ago` : s.lastSeenAt ? `last report ${fmt(s.lastSeenAt).slice(0, 16)} (before restart)` : 'no reports received yet',
+      rep && rep.version ? `sensor v${rep.version}` : null,
+      rep ? `every ${rep.interval} s` : null,
+    ].filter(Boolean).join(' · ');
+    const lines = rep ? rep.results.map((x) => `${x.ok ? '✓' : '✗'} ${x.nodeName || x.nodeId} — ${x.ok ? `${x.ms} ms` : x.error}${x.exitIp ? ` · exit IP ${x.exitIp}` : ''}`) : [];
+    return `<div class="item static">
+        <span class="item-main">
+          <span class="item-name" style="display:block">${esc(s.name)}</span>
+          <span class="item-sub" style="display:block">${esc(meta)}</span>
+          ${rep && rep.sensorError ? `<span class="item-sub danger-text" style="display:block;white-space:normal">${esc(rep.sensorError)}</span>` : ''}
+          ${lines.map((l) => `<span class="item-sub" style="display:block;white-space:normal">${esc(l)}</span>`).join('')}
+          ${rep && rep.unknown.length ? `<span class="item-sub danger-text" style="display:block;white-space:normal">Unknown exit node IDs in the sensor configuration: ${esc(rep.unknown.join(', '))}</span>` : ''}
+          <span class="sensor-actions">
+            <button class="btn-small" data-action="sensor-token" data-sid="${s.id}" ${dis}>Issue new token</button>
+            <button class="btn-small danger-text" data-action="sensor-remove" data-sid="${s.id}" ${dis}>Remove</button>
+          </span>
+        </span>
+        <span class="item-side"><span class="badge ${st.cls}">${st.label}</span></span>
+      </div>`;
+  }
+
+  function viewSensors() {
+    const v = state.sens;
+    if (!v.items) return loading(v.error);
+    const dis = state.busy ? 'disabled' : '';
+    const issued = v.issued ? `
+      <div class="section-head"><span>SENSOR TOKEN · ${esc(v.issued.name.toUpperCase())}</span></div>
+      <div class="card token-card">
+        <div class="item-sub" style="white-space:normal;margin-bottom:8px">The token is shown only once. Enter it in the sensor configuration
+          (field “token”). Only its hash is stored on the server; if the token is lost, issue a new one.</div>
+        <input class="token" readonly value="${esc(v.issued.token)}" data-token aria-label="Sensor token">
+        <div class="actions">
+          <button class="btn" data-action="sensor-copy">Copy token</button>
+          <button class="btn" data-action="sensor-hide">Done</button>
+        </div>
+      </div>` : '';
+    return `${BACK}
+      <div class="detail-head"><h1>Traffic sensors</h1></div>
+      <p class="note">A traffic sensor runs on a separate server, preferably in the region of your users. It connects to each exit node
+        with the same VLESS profile as a client and reports whether traffic actually passes. If an exit node responds but traffic
+        does not pass, the exit node is declared unavailable. If a sensor stops reporting, exit nodes are evaluated by the direct check only.</p>
+      ${issued}
+      <div class="section-head"><span>SENSORS</span></div>
+      <div class="card">${v.items.length ? v.items.map(sensorRow).join('') : '<div class="empty">No sensors registered.</div>'}</div>
+      <div class="section-head"><span>REGISTER A SENSOR</span></div>
+      <label class="field">
+        <span class="field-label">Sensor name</span>
+        <input data-sensor="name" value="${esc(v.newName)}" maxlength="40" placeholder="MSK-1" autocomplete="off">
+        <span class="field-hint">Shown in notifications, for example “VLESS traffic not passing (sensor MSK-1)”.</span>
+      </label>
+      <div class="actions"><button class="btn primary" data-action="sensor-add" ${dis}>Register sensor and issue token</button></div>
+      <div class="section-head"><span>EXIT NODE IDS FOR THE SENSOR CONFIGURATION</span></div>
+      <p class="note">Exit nodes marked NOT CHECKED have traffic verification turned off (Edit exit node). Sensors skip them,
+        even if they are listed in the sensor configuration.</p>
+      <div class="card">${v.nodes.length ? v.nodes.map((n) =>
+        `<div class="kv"><span class="kv-k">${esc(n.name)}${n.traffic ? '' : ' <span class="badge ack">NOT CHECKED</span>'}</span>
+          <span class="kv-v mono">${esc(n.id)}</span></div>`).join('')
+        : '<div class="empty">No exit nodes are configured.</div>'}</div>
+      ${v.reportUrl ? `<p class="note">Report URL: <span class="mono">${esc(v.reportUrl)}</span></p>` : ''}`;
+  }
+
+  async function loadSensors() {
+    try {
+      const r = await api('GET', '/api/sensors');
+      Object.assign(state.sens, { items: r.sensors, nodes: r.nodes, reportUrl: r.reportUrl, error: null });
+    } catch (e) { state.sens.error = e.message; }
+    if (state.view === 'sensors') render();
+  }
+
+  function navItem(action, title, sub) {
+    return `<button class="item" data-action="${action}">
+        <span class="item-main">
+          <span class="item-name" style="display:block">${title}</span>
+          <span class="item-sub" style="display:block">${sub}</span>
+        </span>
+        <span class="chev">›</span>
+      </button>`;
+  }
+
+  function viewSchedules() {
+    const v = state.sch;
+    const admin = state.data.me.isAdmin;
+    if (!v.items) {
+      return `<div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+        <div class="center">${v.error ? esc(v.error) : 'Loading…'}</div>`;
+    }
+    const upcoming = v.items.filter((s) => s.state === 'scheduled' || s.state === 'active').sort((a, b) => a.start - b.start);
+    const past = v.items.filter((s) => s.state === 'completed' || s.state === 'cancelled').slice(0, 15);
+    return `
+      <div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+      <div class="detail-head"><h1>Maintenance schedule</h1></div>
+      ${admin ? `<p class="note">${esc(announceNote())} Outage notifications are suspended for the duration of the window.</p>
+        <div class="actions"><button class="btn primary" data-action="schedule-new">Schedule maintenance</button></div>` : ''}
+      <div class="section-head"><span>UPCOMING &amp; IN PROGRESS</span></div>
+      <div class="card">${upcoming.length ? upcoming.map((s) => scheduleRow(s, admin)).join('') : '<div class="empty">No maintenance is planned.</div>'}</div>
+      <div class="section-head"><span>RECENT</span></div>
+      <div class="card">${past.length ? past.map((s) => scheduleRow(s, false)).join('') : '<div class="empty">No completed or cancelled windows yet.</div>'}</div>`;
+  }
+
+  async function loadSchedules() {
+    try {
+      const r = await api('GET', '/api/schedules');
+      Object.assign(state.sch, { items: r.schedules, error: null });
+    } catch (e) { state.sch.error = e.message; }
+    if (state.view === 'schedules') render();
+  }
+
+  const DURATIONS = [[30, '30 min'], [60, '1 h'], [120, '2 h'], [240, '4 h'], [480, '8 h'], [1440, '24 h']];
+  const windowNote = (start, end) => (Number.isFinite(start)
+    ? `Window: ${fmt(start).slice(0, 16)} → ${fmt(end).slice(0, 16)} (${dur(end - start)}). ${announceNote()}`
+    : 'Select the start date and time.');
+  function updateWindowNote() {
+    const el = document.getElementById('sched-window');
+    const start = new Date(state.schForm.start).getTime();
+    if (el) el.textContent = windowNote(start, start + state.schForm.minutes * 60000);
+  }
+  const toLocalInput = (ts) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  function viewScheduleForm() {
+    const f = state.schForm;
+    const dis = state.busy ? 'disabled' : '';
+    const start = new Date(f.start).getTime();
+    const end = start + f.minutes * 60000;
+    const nodes = state.data.resources.map((r) => `
+      <label class="item check">
+        <input type="checkbox" data-node-pick="${esc(r.id)}" aria-label="${esc(r.name)}" ${f.nodeIds.includes(r.id) ? 'checked' : ''}>
+        <span class="item-main"><span class="item-name" style="display:block">${esc(r.name)}</span>
+        <span class="item-sub" style="display:block">${esc(r.method)}</span></span>
+      </label>`).join('');
+    return `
+      <div class="nav"><button class="link" data-action="back">‹ Cancel</button></div>
+      <div class="detail-head"><h1>Schedule maintenance</h1></div>
+      <span class="field-label">Exit nodes</span>
+      <div class="card">${nodes || '<div class="empty">No exit nodes are configured.</div>'}</div>
+      <label class="field">
+        <span class="field-label">Start (your local time)</span>
+        <input type="datetime-local" data-sched="start" value="${esc(f.start)}">
+      </label>
+      <span class="field-label">Duration</span>
+      <div class="seg wrap">${DURATIONS.map(([mm, l]) =>
+        `<button data-action="sched-dur" data-min="${mm}" class="${f.minutes === mm ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div style="height:8px"></div>
+      <label class="field">
+        <span class="field-label">Reason (optional)</span>
+        <input data-sched="reason" value="${esc(f.reason)}" maxlength="200" placeholder="Kernel upgrade" autocomplete="off">
+        <span class="field-hint">Shown in maintenance notifications to subscribers.</span>
+      </label>
+      <p class="note" id="sched-window">${windowNote(start, end)}</p>
+      ${state.schError ? `<div class="result err">${esc(state.schError)}</div>` : ''}
+      <div class="actions"><button class="btn primary" data-action="sched-save" ${dis}>${isMuted('maintenanceScheduled') ? 'Schedule maintenance' : 'Schedule and announce'}</button></div>`;
+  }
+
+  function viewForm() {
+    const f = state.form;
+    const dis = state.busy ? 'disabled' : '';
+    const input = (field, label, attrs, hint) => `
+      <label class="field">
+        <span class="field-label">${label}</span>
+        <input data-field="${field}" value="${esc(f[field])}" ${attrs} autocomplete="off" autocapitalize="off" spellcheck="false">
+        ${hint ? `<span class="field-hint">${hint}</span>` : ''}
+      </label>`;
+    const typeFields = {
+      ping: input('host', 'Host', 'placeholder="203.0.113.10 or server.example.com" inputmode="url"',
+        'The exit node is considered available if it replies to an ICMP echo request.'),
+      tcp: input('host', 'Host', 'placeholder="203.0.113.10 or server.example.com" inputmode="url"')
+        + input('port', 'Port', 'placeholder="22" inputmode="numeric" maxlength="5"',
+          'The exit node is considered available if a TCP connection to the port can be established.'),
+      http: input('url', 'URL', 'placeholder="https://example.com/health" inputmode="url"',
+        'The exit node is considered available if the response status code is below 400. Redirects are followed.'),
+    }[f.type];
+    const test = state.testResult
+      ? `<div class="result ${state.testResult.ok ? 'ok' : 'err'}">${state.testResult.ok
+          ? `Check passed · response time ${state.testResult.ms} ms`
+          : `Check failed · ${esc(state.testResult.error)}`}</div>` : '';
+
+    return `
+      <div class="nav"><button class="link" data-action="back">‹ Cancel</button></div>
+      <div class="detail-head"><h1>${f.id ? 'Edit exit node' : 'Add exit node'}</h1></div>
+      ${input('name', 'Name', 'placeholder="Exit node NL-01" maxlength="64"', 'Shown in notifications. Addresses are never disclosed to chat members.')}
+      <span class="field-label">Check method</span>
+      <div class="seg">
+        ${[['ping', 'ICMP ping'], ['tcp', 'TCP port'], ['http', 'HTTP(S)']].map(([t, l]) =>
+          `<button data-action="type" data-type="${t}" class="${f.type === t ? 'on' : ''}">${l}</button>`).join('')}
+      </div>
+      <div style="height:8px"></div>
+      ${typeFields}
+      ${input('latencyMs', 'Latency threshold, ms (optional)', `placeholder="Default: ${defaultThreshold(f.type)}" inputmode="numeric" maxlength="5"`,
+        'Leave empty to use the default. 0 disables latency alerts for this exit node. HTTP checks include DNS and TLS time, so their default is disabled.')}
+      <div class="card">
+        <div class="row-toggle">
+          <div class="item-main">
+            <div class="item-name">Traffic verification (VLESS)</div>
+            <div class="item-sub">Traffic sensors check that traffic actually passes through this exit node. Turn off for servers
+              that do not carry user traffic, for example a configuration distribution server.</div>
+          </div>
+          <button class="switch ${f.trafficCheck ? 'on' : ''}" data-action="form-traffic" role="switch"
+                  aria-checked="${f.trafficCheck}" aria-label="Traffic verification"></button>
+        </div>
+      </div>
+      ${state.formError ? `<div class="result err">${esc(state.formError)}</div>` : ''}
+      ${test}
+      <div class="actions">
+        <button class="btn" data-action="test" ${dis}>Test check</button>
+        <button class="btn primary" data-action="save" ${dis}>${f.id ? 'Save changes' : 'Add exit node'}</button>
+      </div>`;
+  }
+
+  const defaultThreshold = (type) => {
+    const m = state.data.monitor;
+    const v = type === 'http' ? m.latencyThresholdHttpMs : m.latencyThresholdMs;
+    return v > 0 ? `${v} ms` : 'disabled';
+  };
+
+  // Must match PREVIEW_KINDS in lib/webserver.js.
+  const PREVIEW_KINDS = [['alert', 'Outage'], ['reminder', 'Repeat'], ['acknowledged', 'Acknowledged'],
+    ['recovered', 'Restored'], ['degraded', 'High latency'], ['perfRestored', 'Latency normal'],
+    ['maintenance', 'Maintenance'], ['scheduled', 'Scheduled']];
+
+  function viewTemplates() {
+    const tp = state.tpl;
+    if (!tp.groups) {
+      return `<div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+        <div class="center">${tp.error ? esc(tp.error) : 'Loading…'}</div>`;
+    }
+    const dis = state.busy ? 'disabled' : '';
+    const groups = tp.groups.map((g) => `
+      <div class="section-head"><span>${esc(g.label.toUpperCase())}</span></div>
+      <div class="card">${g.fields.map((f) => {
+        const value = tp.values[f.key];
+        const changed = value !== f.default;
+        const control = f.multiline
+          ? `<textarea data-tpl="${f.key}" rows="2" maxlength="${f.max}">${esc(value)}</textarea>`
+          : `<input data-tpl="${f.key}" value="${esc(value)}" maxlength="${f.max}" autocomplete="off">`;
+        return `
+          <div class="tpl-field">
+            <div class="tpl-head">
+              <span class="tpl-label">${esc(f.label)} ${changed ? '<span class="badge custom">CUSTOM</span>' : ''}</span>
+              ${changed ? `<button class="btn-small" data-action="tpl-reset" data-key="${f.key}">Reset</button>` : ''}
+            </div>
+            ${control}
+            <div class="chips">
+              ${f.vars.map((v) => `<button class="chip" data-action="tpl-insert" data-key="${f.key}" data-var="${v}"
+                  title="${esc(tp.placeholders[v] || '')}">{${v}}</button>`).join('')}
+              <span class="tpl-meta" style="margin-left:auto">${f.required ? 'Required' : 'Leave empty to omit'}</span>
+            </div>
+          </div>`;
+      }).join('')}</div>`).join('');
+
+    return `
+      <div class="nav"><button class="link" data-action="back">‹ Exit nodes</button></div>
+      <div class="detail-head"><h1>Notification templates</h1></div>
+      <p class="note">Edit the wording of incident notifications. Data tables (incident ID, timestamps, errors, buttons)
+        are generated automatically. Tap a placeholder to insert it; it is replaced with live data when the notification is issued.
+        Changes take effect immediately after saving.</p>
+      ${groups}
+
+      <div class="section-head"><span>PREVIEW</span></div>
+      <div class="seg wrap">${PREVIEW_KINDS.map(([k, l]) =>
+        `<button data-action="tpl-kind" data-kind="${k}" class="${tp.kind === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="actions">
+        ${tp.previewHtml ? `<div class="preview">${tp.previewHtml}</div>` : ''}
+        <button class="btn" data-action="tpl-preview" ${dis}>Show preview</button>
+        <button class="btn" data-action="tpl-send" ${dis}>Send preview to my private chat</button>
+      </div>
+
+      ${tp.saveError ? `<div class="result err">${esc(tp.saveError)}</div>` : ''}
+      <div class="actions">
+        <button class="btn primary" data-action="tpl-save" ${dis}>Save templates</button>
+        <button class="btn danger" data-action="tpl-reset-all" ${dis}>Restore all default texts</button>
+      </div>`;
+  }
+
+  /** Fit the field height to its content, so long text is fully visible without inner scrolling. */
+  function autosize(el) {
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }
+
+  const tplDirty = () => state.tpl && state.tpl.groups
+    && Object.keys(state.tpl.values).some((k) => state.tpl.values[k] !== state.tpl.saved[k]);
+
+  async function loadTemplates() {
+    try {
+      const data = await api('GET', '/api/texts');
+      const values = {};
+      data.groups.forEach((g) => g.fields.forEach((f) => { values[f.key] = f.value; }));
+      Object.assign(state.tpl, { groups: data.groups, placeholders: data.placeholders, values, saved: { ...values }, error: null });
+    } catch (e) {
+      state.tpl.error = e.message;
+    }
+    render();
+  }
+
+  function render() {
+    const ae = document.activeElement;
+    const focusAttr = ae && ae.dataset && ['field', 'tpl', 'msg', 'sensor'].find((k) => ae.dataset[k]);
+    const focused = focusAttr
+      ? { attr: `data-${focusAttr}`, key: ae.dataset[focusAttr], start: ae.selectionStart, end: ae.selectionEnd }
+      : null;
+    if (!tg || !tg.initData) {
+      app.innerHTML = `<div class="center"><div class="title">Egress Sentinel</div>
+        This application must be opened from Telegram.</div>`;
+      return;
+    }
+    if (!state.data && state.accessReq) {
+      app.innerHTML = viewAccess();
+      return;
+    }
+    if (!state.data) {
+      app.innerHTML = state.error
+        ? `<div class="center"><div class="title">Unable to load</div>${esc(state.error)}<br><br>
+           <button class="btn" data-action="reload">Retry</button></div>`
+        : '<div class="center">Loading…</div>';
+      return;
+    }
+    const admin = state.data.me.isAdmin;
+    if (state.view === 'detail' && current()) app.innerHTML = viewDetail();
+    else if (state.view === 'form' && admin) app.innerHTML = viewForm();
+    else if (state.view === 'templates' && admin) app.innerHTML = viewTemplates();
+    else if (state.view === 'incidents') app.innerHTML = viewIncidents();
+    else if (state.view === 'schedules') app.innerHTML = viewSchedules();
+    else if (state.view === 'schedule-form' && admin) app.innerHTML = viewScheduleForm();
+    else if (state.view === 'users' && admin) app.innerHTML = viewUsers();
+    else if (state.view === 'notif' && admin) app.innerHTML = viewNotif();
+    else if (state.view === 'messages' && admin) app.innerHTML = viewMessages();
+    else if (state.view === 'sensors' && admin) app.innerHTML = viewSensors();
+    else { state.view = 'list'; app.innerHTML = viewList(); }
+
+    if (state.view === 'detail') drawCharts();
+    app.querySelectorAll('textarea').forEach(autosize);
+    if (focused) {
+      const el = app.querySelector(`[${focused.attr}="${focused.key}"]`);
+      if (el) {
+        el.focus();
+        const pos = focused.start == null ? el.value.length : focused.start;
+        try { el.setSelectionRange(pos, focused.end == null ? pos : focused.end); } catch (e) { /* not a text field */ }
+      }
+    }
+    if (tg.BackButton && supports('6.1')) {
+      if (state.view === 'list') tg.BackButton.hide(); else tg.BackButton.show();
+    }
+  }
+
+  // ── Navigation & actions ─────────────────────────────────────────────────
+  function go(view, id) {
+    const from = state.view;
+    state.view = view;
+    if (id !== undefined) state.id = id;
+    state.checkResult = null;
+    window.scrollTo(0, 0);
+    render();
+    if (view === 'detail' && (from !== 'detail' || state.hist.id !== state.id)) {
+      if (state.hist.id !== state.id) state.hist.data = null;
+      loadHistory();
+    }
+  }
+
+  async function back() {
+    if (state.view === 'templates' && tplDirty()
+        && !(await confirmDialog('Discard unsaved changes to the notification templates?'))) return;
+    if (state.view === 'messages' && msgDirty()
+        && !(await confirmDialog('Discard the unsent message?'))) return;
+    if (state.view === 'form' && state.form.id) go('detail', state.form.id);
+    else if (state.view === 'schedule-form') { go('schedules'); loadSchedules(); }
+    else go('list');
+  }
+
+  /** Texts sent to the server: only fields that differ from the saved ones. */
+  const tplPayload = () => {
+    const tp = state.tpl;
+    const out = {};
+    Object.keys(tp.values).forEach((k) => { if (tp.values[k] !== tp.saved[k]) out[k] = tp.values[k]; });
+    return out;
+  };
+
+  function openForm(resource) {
+    state.form = resource
+      ? { id: resource.id, name: resource.name, type: resource.type, host: resource.host || '',
+          port: resource.port ? String(resource.port) : '', url: resource.url || '',
+          latencyMs: resource.latencyMs == null ? '' : String(resource.latencyMs), trafficCheck: resource.trafficCheck !== false }
+      : { id: null, name: '', type: 'tcp', host: '', port: '', url: '', latencyMs: '', trafficCheck: true };
+    state.formError = null;
+    state.testResult = null;
+    go('form');
+  }
+
+  const formTarget = () => {
+    const f = state.form;
+    return {
+      name: f.name, type: f.type, host: f.host, port: f.port === '' ? undefined : Number(f.port), url: f.url,
+      latencyMs: f.latencyMs.trim() === '' ? null : Number(f.latencyMs),
+      trafficCheck: f.trafficCheck,
+    };
+  };
+
+  const actions = {
+    reload: () => load(),
+
+    templates: () => {
+      state.tpl = { groups: null, values: {}, saved: {}, kind: 'alert', previewHtml: null, saveError: null, cursor: null };
+      go('templates');
+      loadTemplates();
+    },
+    'tpl-reset': (el) => {
+      const f = state.tpl.groups.flatMap((g) => g.fields).find((x) => x.key === el.dataset.key);
+      state.tpl.values[f.key] = f.default;
+      state.tpl.previewHtml = null;
+      render();
+    },
+    'tpl-insert': (el) => {
+      const key = el.dataset.key;
+      const token = `{${el.dataset.var}}`;
+      const value = state.tpl.values[key];
+      const c = state.tpl.cursor;
+      const pos = c && c.key === key ? c.pos : value.length;
+      state.tpl.values[key] = value.slice(0, pos) + token + value.slice(pos);
+      state.tpl.cursor = { key, pos: pos + token.length };
+      render();
+      const field = app.querySelector(`[data-tpl="${key}"]`);
+      if (field) { field.focus(); field.setSelectionRange(pos + token.length, pos + token.length); }
+    },
+    'tpl-kind': (el) => { state.tpl.kind = el.dataset.kind; state.tpl.previewHtml = null; render(); },
+    'tpl-preview': () => run(async () => {
+      state.tpl.saveError = null;
+      const res = await api('POST', '/api/texts/preview', { kind: state.tpl.kind, texts: tplPayload() });
+      state.tpl.previewHtml = res.html;
+    }),
+    'tpl-send': () => run(async () => {
+      await api('POST', '/api/texts/send-preview', { kind: state.tpl.kind, texts: tplPayload() });
+      haptic('success');
+      toast('Preview sent to your private chat.');
+    }),
+    'tpl-save': () => run(async () => {
+      state.tpl.saveError = null;
+      try {
+        const res = await api('PUT', '/api/texts', { texts: tplPayload() });
+        state.tpl.saved = { ...state.tpl.values };
+        haptic('success');
+        toast(res.saved ? 'Templates saved. Changes take effect immediately.' : 'No changes to save.');
+      } catch (e) {
+        state.tpl.saveError = e.message;
+        haptic('error');
+      }
+    }),
+    'tpl-reset-all': async () => {
+      if (!(await confirmDialog('Restore the default wording for all notifications? Custom texts will be discarded.'))) return;
+      run(async () => {
+        const reset = {};
+        state.tpl.groups.forEach((g) => g.fields.forEach((f) => { reset[f.key] = null; }));
+        await api('PUT', '/api/texts', { texts: reset });
+        await loadTemplates();
+        state.tpl.previewHtml = null;
+        haptic('success');
+        toast('Default texts restored.');
+      });
+    },
+    range: (el) => {
+      state.hist.range = el.dataset.range;
+      render();
+      loadHistory();
+    },
+
+    reorder: () => { state.reorder = !state.reorder; render(); },
+    move: (el) => {
+      const ids = state.data.resources.map((r) => r.id);
+      const from = ids.indexOf(el.dataset.id);
+      const to = from + Number(el.dataset.dir);
+      if (from < 0 || to < 0 || to >= ids.length) return;
+      [ids[from], ids[to]] = [ids[to], ids[from]];
+      // Show the new order at once, then save; on error, reload from the server.
+      const byId = new Map(state.data.resources.map((r) => [r.id, r]));
+      state.data.resources = ids.map((id) => byId.get(id));
+      run(async () => {
+        try {
+          await api('PUT', '/api/resources/order', { ids });
+          haptic('success');
+        } catch (e) {
+          await load();
+          throw e;
+        }
+      });
+    },
+
+    users: () => {
+      state.users = { items: null, error: null };
+      go('users');
+      loadUsers();
+    },
+    'user-decide': async (el) => {
+      const u = state.users.items.find((x) => String(x.id) === el.dataset.uid);
+      const d = el.dataset.decision;
+      const question = {
+        approve: `Grant access to ${u.name}? They will receive incident notifications and read-only dashboard access.`,
+        deny: `Decline the access request from ${u.name}?`,
+        revoke: `Revoke access for ${u.name}? They will stop receiving notifications.`,
+      }[d];
+      if (!(await confirmDialog(question))) return;
+      run(async () => {
+        await api('POST', `/api/users/${u.id}/${d}`);
+        haptic('success');
+        toast({ approve: 'Access granted. The user has been notified.', deny: 'Request declined.', revoke: 'Access revoked.' }[d]);
+        await Promise.all([loadUsers(), load()]);
+      });
+    },
+    'request-access': () => run(async () => {
+      try {
+        await api('POST', '/api/access-request');
+        state.accessReq = { status: 'pending', canRequest: false };
+        haptic('success');
+        toast('Access request submitted.');
+      } catch (e) {
+        if (e.data && e.data.status) state.accessReq = { status: e.data.status, canRequest: false };
+        throw e;
+      }
+      await load();
+    }),
+
+    notif: () => {
+      state.notif = { groups: null, error: null };
+      go('notif');
+      loadNotif();
+    },
+    'notif-toggle': async (el) => {
+      const item = state.notif.groups.flatMap((g) => g.items).find((i) => i.id === el.dataset.nid);
+      const enable = !item.enabled;
+      if (!enable && item.critical
+          && !(await confirmDialog(`Mute “${item.label}”? Nobody will receive these notifications until the category is enabled again.`))) return;
+      run(async () => {
+        const r = await api('PUT', '/api/notifications', { settings: { [item.id]: enable } });
+        state.notif.groups = r.groups;
+        state.data.me.mutedNotifications = r.groups.flatMap((g) => g.items).filter((i) => !i.enabled).map((i) => i.id);
+        haptic('success');
+        toast(`“${item.label}”: ${enable ? 'enabled' : 'muted'}.`);
+      });
+    },
+
+    messages: (el) => {
+      state.msg = { recipients: null, sent: null, error: null, ids: el.dataset.uid ? [Number(el.dataset.uid)] : [],
+        subject: '', text: '', previewHtml: null, formError: null };
+      go('messages');
+      loadMessages();
+    },
+    'msg-all': () => {
+      const v = state.msg;
+      v.ids = v.ids.length === v.recipients.length ? [] : v.recipients.map((u) => u.id);
+      render();
+    },
+    'msg-preview': () => run(async () => {
+      const v = state.msg;
+      v.formError = null;
+      try {
+        v.previewHtml = (await api('POST', '/api/messages/preview', { subject: v.subject, text: v.text })).html;
+      } catch (e) { v.formError = e.message; v.previewHtml = null; }
+    }),
+    'msg-send': async () => {
+      const v = state.msg;
+      if (!v.text.trim()) { v.formError = 'Message text is required'; render(); return; }
+      const n = v.ids.length;
+      if (!(await confirmDialog(`Send this message to ${n} user${n === 1 ? '' : 's'}? Delivered messages cannot be recalled.`))) return;
+      run(async () => {
+        v.formError = null;
+        try {
+          const r = await api('POST', '/api/messages', { ids: v.ids, subject: v.subject, text: v.text });
+          const failed = r.recipients.length - r.delivered;
+          haptic(failed ? 'warning' : 'success');
+          toast(failed ? `Delivered to ${r.delivered} of ${r.recipients.length}. See details under Sent messages.`
+            : `Message delivered to ${r.delivered} user${r.delivered === 1 ? '' : 's'}.`, failed ? 'err' : undefined);
+          Object.assign(v, { subject: '', text: '', previewHtml: null });
+          await loadMessages();
+        } catch (e) { v.formError = e.message; haptic('error'); }
+      });
+    },
+
+    sensors: () => {
+      state.sens = { items: null, nodes: [], reportUrl: null, error: null, newName: '', issued: null };
+      go('sensors');
+      loadSensors();
+    },
+    'sensor-add': () => run(async () => {
+      const r = await api('POST', '/api/sensors', { name: state.sens.newName });
+      Object.assign(state.sens, { issued: r, newName: '' });
+      haptic('success');
+      await Promise.all([loadSensors(), load()]);
+      window.scrollTo(0, 0);
+    }),
+    'sensor-token': async (el) => {
+      const s = state.sens.items.find((x) => x.id === el.dataset.sid);
+      if (!(await confirmDialog(`Issue a new token for ${s.name}? The current token stops working immediately; the sensor configuration must be updated.`))) return;
+      run(async () => {
+        state.sens.issued = await api('POST', `/api/sensors/${s.id}/token`);
+        haptic('success');
+        window.scrollTo(0, 0);
+      });
+    },
+    'sensor-remove': async (el) => {
+      const s = state.sens.items.find((x) => x.id === el.dataset.sid);
+      if (!(await confirmDialog(`Remove ${s.name}? Its reports will no longer be accepted and traffic verification by this sensor stops.`))) return;
+      run(async () => {
+        await api('DELETE', `/api/sensors/${s.id}`);
+        if (state.sens.issued && state.sens.issued.id === s.id) state.sens.issued = null;
+        haptic('success');
+        toast('Sensor removed.');
+        await Promise.all([loadSensors(), load()]);
+      });
+    },
+    'sensor-copy': () => {
+      const token = state.sens.issued.token;
+      const fallback = () => {
+        const input = app.querySelector('[data-token]');
+        input.focus();
+        input.select();
+        try { document.execCommand('copy'); toast('Token copied.'); } catch (e) { toast('Select the token and copy it manually.', 'err'); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(token).then(() => toast('Token copied.'), fallback);
+      } else fallback();
+    },
+    'sensor-hide': () => { state.sens.issued = null; render(); },
+
+    incidents: () => {
+      state.inc = { days: state.inc.days || 30, items: null, error: null };
+      go('incidents');
+      loadIncidents();
+    },
+    'inc-days': (el) => { state.inc.days = Number(el.dataset.days); state.inc.items = null; render(); loadIncidents(); },
+
+    schedules: () => {
+      state.sch = { items: null, error: null };
+      go('schedules');
+      loadSchedules();
+    },
+    'schedule-new': (el) => {
+      // Default: one hour from now, rounded up to 15 minutes.
+      const start = Math.ceil((Date.now() + 3600000) / 900000) * 900000;
+      state.schForm = { nodeIds: el.dataset.node ? [el.dataset.node] : [], start: toLocalInput(start), minutes: 60, reason: '' };
+      state.schError = null;
+      go('schedule-form');
+    },
+    'sched-dur': (el) => { state.schForm.minutes = Number(el.dataset.min); render(); },
+    'sched-save': async () => {
+      const f = state.schForm;
+      const start = new Date(f.start).getTime(); // a datetime-local value is the device's local time
+      if (!f.nodeIds.length) { state.schError = 'Select at least one exit node'; render(); return; }
+      if (!Number.isFinite(start)) { state.schError = 'Start time is required'; render(); return; }
+      if (!(await confirmDialog(isMuted('maintenanceScheduled')
+        ? 'Schedule this maintenance window? Announcements are muted; subscribers will receive only the reminder.'
+        : 'Schedule this maintenance window? An announcement will be sent to subscribers immediately.'))) return;
+      run(async () => {
+        state.schError = null;
+        try {
+          await api('POST', '/api/schedules', { nodeIds: f.nodeIds, start, end: start + f.minutes * 60000, reason: f.reason });
+          haptic('success');
+          toast(isMuted('maintenanceScheduled') ? 'Maintenance scheduled.' : 'Maintenance scheduled. The announcement has been sent.');
+          state.sch = { items: null, error: null };
+          go('schedules');
+          await Promise.all([loadSchedules(), load()]);
+        } catch (e) {
+          state.schError = e.message;
+          haptic('error');
+        }
+      });
+    },
+    'sched-cancel': async (el) => {
+      const s = state.sch.items.find((x) => x.id === el.dataset.sid);
+      const active = s && s.state === 'active';
+      if (!(await confirmDialog(active
+        ? 'End this maintenance window now? Monitoring of its exit nodes resumes immediately.'
+        : `Cancel this maintenance window?${isMuted('maintenanceCancelled') ? '' : ' A cancellation notice will be sent to subscribers.'}`))) return;
+      run(async () => {
+        await api('DELETE', `/api/schedules/${el.dataset.sid}`);
+        haptic('success');
+        toast(active ? 'Maintenance window ended.' : 'Maintenance window cancelled.');
+        await Promise.all([loadSchedules(), load()]);
+      });
+    },
+
+    open: (el) => go('detail', el.dataset.id),
+    back,
+    add: () => openForm(null),
+    edit: () => openForm(current()),
+    type: (el) => { state.form.type = el.dataset.type; state.testResult = null; state.formError = null; render(); },
+    'form-traffic': () => { state.form.trafficCheck = !state.form.trafficCheck; render(); },
+    'mnt-pick': (el) => { state.mntMinutes = Number(el.dataset.min); render(); },
+
+    test: () => run(async () => {
+      state.formError = null;
+      state.testResult = await api('POST', '/api/check', formTarget());
+      haptic(state.testResult.ok ? 'success' : 'warning');
+    }),
+
+    save: () => run(async () => {
+      state.formError = null;
+      try {
+        const f = state.form;
+        const saved = f.id
+          ? await api('PUT', `/api/resources/${f.id}`, formTarget())
+          : await api('POST', '/api/resources', formTarget());
+        haptic('success');
+        toast(f.id ? 'Exit node updated.' : 'Exit node placed under monitoring.');
+        await load();
+        go('detail', saved.id);
+      } catch (e) {
+        state.formError = e.message;
+        haptic('error');
+      }
+    }),
+
+    delete: async () => {
+      const r = current();
+      if (!(await confirmDialog(`Remove “${r.name}” from monitoring? Any open incident will be closed administratively.`))) return;
+      run(async () => {
+        await api('DELETE', `/api/resources/${r.id}`);
+        haptic('success');
+        toast('Exit node removed from monitoring.');
+        await load();
+        go('list');
+      });
+    },
+
+    ack: () => run(async () => {
+      await api('POST', `/api/resources/${state.id}/ack`);
+      haptic('success');
+      toast('Incident acknowledged. Repeat notifications are suspended.');
+      await load();
+    }),
+
+    'mnt-start': () => run(async () => {
+      await api('POST', `/api/resources/${state.id}/maintenance`, { minutes: state.mntMinutes });
+      haptic('success');
+      toast('Maintenance window opened.');
+      await load();
+    }),
+
+    'mnt-end': () => run(async () => {
+      await api('POST', `/api/resources/${state.id}/maintenance`, { minutes: 0 });
+      haptic('success');
+      toast('Maintenance window closed. Monitoring has resumed.');
+      await load();
+    }),
+
+    'check-now': () => run(async () => {
+      const r = current();
+      state.checkResult = await api('POST', '/api/check', { type: r.type, host: r.host, port: r.port, url: r.url });
+      haptic(state.checkResult.ok ? 'success' : 'warning');
+    }),
+
+    'toggle-sub': async () => {
+      const enable = !state.data.me.subscribed;
+      if (enable && supports('6.9')) {
+        const granted = await new Promise((resolve) => tg.requestWriteAccess((ok) => resolve(ok)));
+        if (!granted) { toast('Permission to send private messages was not granted.', 'err'); return; }
+      }
+      run(async () => {
+        const res = await api('POST', '/api/subscription', { enabled: enable });
+        state.data.me.subscribed = res.subscribed;
+        haptic('success');
+        toast(res.subscribed ? 'Private notifications enabled.' : 'Private notifications disabled.');
+      });
+    },
+  };
+
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || el.disabled) return;
+    const fn = actions[el.dataset.action];
+    if (fn) fn(el);
+  });
+
+  document.addEventListener('input', (e) => {
+    const ds = e.target.dataset || {};
+    if (ds.field && state.form) {
+      state.form[ds.field] = e.target.value;
+      state.testResult = null;
+    }
+    if (ds.sched && state.schForm) {
+      state.schForm[ds.sched] = e.target.value;
+      if (ds.sched === 'start') updateWindowNote();
+    }
+    if (ds.tpl && state.tpl) {
+      if (e.target.tagName === 'TEXTAREA') autosize(e.target);
+      state.tpl.values[ds.tpl] = e.target.value;
+      state.tpl.cursor = { key: ds.tpl, pos: e.target.selectionStart };
+    }
+    if (ds.msg && state.msg) {
+      state.msg[ds.msg] = e.target.value;
+      state.msg.previewHtml = null; // the preview is outdated; it disappears on the next render
+      if (ds.msg === 'text') {
+        autosize(e.target);
+        const counter = document.getElementById('msg-count');
+        if (counter) counter.textContent = `${e.target.value.length} / ${MAX_MESSAGE} characters · plain text, line breaks are preserved`;
+      }
+    }
+    if (ds.sensor && state.sens) state.sens.newName = e.target.value;
+  });
+
+  document.addEventListener('focusin', (e) => {
+    if (e.target.dataset && e.target.dataset.token !== undefined) e.target.select();
+  });
+
+  document.addEventListener('change', (e) => {
+    const uid = e.target.dataset && e.target.dataset.msgPick;
+    if (uid && state.msg) {
+      const ids = new Set(state.msg.ids);
+      if (e.target.checked) ids.add(Number(uid)); else ids.delete(Number(uid));
+      state.msg.ids = [...ids];
+      render();
+      return;
+    }
+    const id = e.target.dataset && e.target.dataset.nodePick;
+    if (!id || !state.schForm) return;
+    const ids = new Set(state.schForm.nodeIds);
+    if (e.target.checked) ids.add(id); else ids.delete(id);
+    state.schForm.nodeIds = [...ids];
+  });
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (state.view === 'detail') drawCharts(); }, 150);
+  });
+
+  // Remember the cursor position so the placeholder buttons insert {placeholder} where it was.
+  document.addEventListener('focusout', (e) => {
+    const key = e.target.dataset && e.target.dataset.tpl;
+    if (key && state.tpl) state.tpl.cursor = { key, pos: e.target.selectionStart };
+  });
+
+  // ── Start ────────────────────────────────────────────────────────────────
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    if (tg.initData) document.documentElement.classList.add('tg');
+    if (supports('6.1')) {
+      tg.BackButton.onClick(back);
+      try { tg.setHeaderColor('secondary_bg_color'); tg.setBackgroundColor('secondary_bg_color'); } catch (e) { /* older clients */ }
+    }
+  }
+  render();
+  if (tg && tg.initData) {
+    load();
+    setInterval(() => {
+      // Refresh only list views: re-rendering forms or the template editor would interfere with typing.
+      if ((state.view === 'list' || state.view === 'detail') && !state.busy && !document.hidden) {
+        load();
+        if (state.view === 'detail') loadHistory();
+      }
+    }, REFRESH_MS);
+  }
+})();
+</script>
+</body>
+</html>

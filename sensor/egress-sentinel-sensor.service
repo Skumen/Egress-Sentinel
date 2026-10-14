@@ -1,0 +1,24 @@
+[Unit]
+Description=Egress Sentinel traffic sensor (VLESS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sentinel-sensor
+Group=sentinel-sensor
+WorkingDirectory=/opt/egress-sentinel-sensor
+ExecStart=/usr/bin/node /opt/egress-sentinel-sensor/sensor.js
+Restart=always
+RestartSec=10
+# The Xray configuration with user keys is written here (/run/egress-sentinel-sensor, service-only access).
+RuntimeDirectory=egress-sentinel-sensor
+RuntimeDirectoryMode=0700
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

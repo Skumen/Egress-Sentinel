@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Egress Sentinel — how it works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one reading column (~68ch) for prose; diagrams, simulator and tables break out to a wider 1080px band.
+     Palette: cool instrument-panel paper, navy ink, petrol accent; status colors are semantic only. */
+  :root {
+    --paper: #eef2f4;
+    --surface: #ffffff;
+    --ink: #16202b;
+    --muted: #586676;
+    --line: #d3dbe2;
+    --accent: #0f6c73;
+    --accent-soft: #dcecee;
+    --ok: #1d8049;
+    --warn: #a86a12;
+    --down: #bf3b27;
+    --maint: #5d4fc9;
+    --bubble: #ffffff;
+    --code-bg: #f3f6f8;
+    --font-display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0e1318; --surface: #151c23; --ink: #e4eaef; --muted: #93a2b1; --line: #27323d;
+      --accent: #4bb2b8; --accent-soft: #15333a; --ok: #43b874; --warn: #e0a23f; --down: #ef6a55; --maint: #9d90f2;
+      --bubble: #1b242d; --code-bg: #10171d; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1318; --surface: #151c23; --ink: #e4eaef; --muted: #93a2b1; --line: #27323d;
+    --accent: #4bb2b8; --accent-soft: #15333a; --ok: #43b874; --warn: #e0a23f; --down: #ef6a55; --maint: #9d90f2;
+    --bubble: #1b242d; --code-bg: #10171d; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper); color: var(--ink); font: 400 16px/1.6 var(--font-body);
+    padding-inline: 20px; padding-block: 0 64px; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .prose { max-width: 68ch; }
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+  h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 800; line-height: 1.05; }
+  h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); font-weight: 800; line-height: 1.15; }
+  h3 { font-size: 1.05rem; font-weight: 600; }
+  p { margin: 0; }
+  .eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+  .lede { font-size: 1.13rem; color: var(--muted); }
+  .mono { font-family: var(--font-mono); }
+  a { color: var(--accent); }
+
+  header.hero { display: grid; gap: 18px; padding-block: 56px 36px; border-bottom: 1px solid var(--line); }
+  .params { display: flex; flex-wrap: wrap; gap: 8px 22px; font: 400 0.82rem/1.4 var(--font-mono); color: var(--muted); }
+  .params b { color: var(--ink); font-weight: 500; }
+
+  section { display: grid; gap: 20px; padding-block: 48px 8px; }
+  .section-head { display: grid; gap: 10px; }
+
+  .figure { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+  .figure svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .caption { font-size: 0.85rem; color: var(--muted); }
+
+  /* SVG roles */
+  .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+  .box-strong { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .box-muted { fill: var(--code-bg); stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .t-title { fill: var(--ink); font: 600 15px var(--font-display); }
+  .t-body { fill: var(--ink); font: 400 12.5px var(--font-body); }
+  .t-muted { fill: var(--muted); font: 400 11.5px var(--font-body); }
+  .t-mono { fill: var(--muted); font: 400 11px var(--font-mono); }
+  .t-label { fill: var(--accent); font: 500 11px var(--font-mono); letter-spacing: 0.04em; }
+  .wire { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .wire-dash { stroke: var(--accent); stroke-width: 1.6; fill: none; stroke-dasharray: 6 5; }
+  .wire-muted { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+  .arrowhead { fill: var(--accent); }
+  .arrowhead-muted { fill: var(--muted); }
+  .node-ok { fill: var(--ok); }
+  .node-off { fill: var(--muted); }
+  .pill { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+  .lane { fill: var(--paper); }
+
+  /* Cycle */
+  .cycle { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; counter-reset: step; }
+  .cycle li { counter-increment: step; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+  .cycle li::before { content: counter(step, decimal-leading-zero); font: 500 0.75rem/1 var(--font-mono); color: var(--accent); letter-spacing: 0.08em; }
+  .cycle li p { color: var(--muted); font-size: 0.9rem; }
+
+  /* Simulator */
+  .sim { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: grid; gap: 16px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tab { font: 500 0.88rem/1 var(--font-body); padding: 9px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
+  .tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+  .tab:focus-visible, .ctl:focus-visible, .step-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sim-summary { color: var(--muted); max-width: 75ch; }
+  .sim-body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 860px) { .sim-body { grid-template-columns: minmax(0, 1fr); } }
+  .timeline { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+  th { text-align: left; font: 500 0.7rem/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 10px 10px; border-bottom: 1px solid var(--line); background: var(--code-bg); white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  .step-row { cursor: pointer; transition: background-color 0.2s; }
+  .step-row.future td { color: var(--muted); }
+  .step-row.current td { background: var(--accent-soft); }
+  .step-row .time { font-family: var(--font-mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cell { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; transform: translateY(-1px); background: var(--muted); display: inline-block; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--down); } .dot.warn { background: var(--warn); } .dot.neutral { background: var(--muted); }
+  .counter { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chip { display: inline-block; font: 600 0.66rem/1 var(--font-mono); letter-spacing: 0.07em; padding: 5px 7px; border-radius: 5px; color: #fff; background: var(--muted); white-space: nowrap; }
+  .chip.up { background: var(--ok); } .chip.unstable, .chip.degraded { background: var(--warn); }
+  .chip.down { background: var(--down); } .chip.maintenance { background: var(--maint); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ctl { font: 500 0.88rem/1 var(--font-body); padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .ctl.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .ctl:disabled { opacity: 0.45; cursor: default; }
+  .stepinfo { font: 400 0.8rem/1 var(--font-mono); color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  .preview { display: grid; gap: 10px; }
+  .preview-label { font: 500 0.7rem/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .note { font-size: 0.92rem; }
+  .bubble { background: var(--bubble); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; padding: 12px 14px; display: grid; gap: 8px; box-shadow: 0 1px 0 var(--line); }
+  .bubble-title { font-weight: 600; font-size: 0.92rem; }
+  .bubble pre { margin: 0; font: 400 0.76rem/1.5 var(--font-mono); background: var(--code-bg); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+  .bubble-to { font-size: 0.78rem; color: var(--muted); }
+  .silent { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; color: var(--muted); font-size: 0.9rem; }
+
+  /* Status model */
+  .states { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .state { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+  .state dl { margin: 0; display: grid; gap: 6px; }
+  .state dt { font: 500 0.68rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .state dd { margin: 0; font-size: 0.9rem; }
+
+  /* Safeguards */
+  .guards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+  .guard { padding: 16px 18px 16px 0; border-bottom: 1px solid var(--line); display: grid; gap: 4px; align-content: start; }
+  .guard p { color: var(--muted); font-size: 0.92rem; }
+  .guard .k { font: 500 0.72rem/1 var(--font-mono); color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  /* Matrix */
+  .matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .matrix table { min-width: 640px; }
+  .matrix td:nth-child(2), .matrix td:nth-child(3), .matrix th:nth-child(2), .matrix th:nth-child(3) { text-align: center; }
+  .yes { color: var(--ok); font-weight: 600; }
+  .no { color: var(--muted); }
+  .msg { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
+
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; list-style: none; padding: 0; margin: 0; counter-reset: f; }
+  .flow li { counter-increment: f; border-left: 2px solid var(--accent); padding: 4px 0 4px 14px; display: grid; gap: 4px; }
+  .flow li::before { content: counter(f); font: 500 0.75rem/1 var(--font-mono); color: var(--accent); }
+  .flow li p { color: var(--muted); font-size: 0.9rem; }
+
+  .data { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .data div { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .data code { font: 500 0.85rem var(--font-mono); color: var(--accent); }
+  .data p { color: var(--muted); font-size: 0.9rem; }
+
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
+
+  @media (prefers-reduced-motion: reduce) { .step-row { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="hero">
+    <span class="eyebrow">Egress Sentinel · exit node monitoring</span>
+    <h1>How Egress Sentinel watches the exit nodes</h1>
+    <p class="lede prose">Egress Sentinel checks every exit node once a minute from the monitoring server. An external sensor checks the same nodes from the users’ side of the network, and the results go to approved users as formal notices in Telegram. Most of the design is about one thing: an outage is announced only when it is real.</p>
+    <div class="params" aria-label="Production parameters">
+      <span>check interval <b>60 s</b></span>
+      <span>outage threshold <b>3 failed checks</b></span>
+      <span>latency threshold <b>300 ms × 3 checks</b></span>
+      <span>repeat notice <b>every 60 min</b></span>
+      <span>maintenance reminder <b>60 min ahead</b></span>
+    </div>
+  </header>
+
+  <section aria-labelledby="arch">
+    <div class="section-head">
+      <span class="eyebrow">Architecture</span>
+      <h2 id="arch">Three vantage points</h2>
+      <p class="prose">The monitor checks that each exit node answers. The sensor checks that traffic actually passes through it. Telegram is how people hear about it and act on it.</p>
+    </div>
+    <div class="figure" role="img" aria-label="Architecture: Telegram users and administrators exchange alerts and commands with the Egress Sentinel monitor. The monitor runs direct checks against the exit nodes. A traffic sensor in Russia opens VLESS tunnels through the exit nodes to a probe target and reports results back to the monitor.">
+      <svg viewBox="0 0 960 480" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+          <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-muted"/></marker>
+        </defs>
+
+        <!-- Telegram -->
+        <rect x="20" y="40" width="210" height="270" rx="12" class="box"/>
+        <text x="38" y="70" class="t-title">Telegram</text>
+        <text x="38" y="90" class="t-muted">where people are</text>
+        <rect x="36" y="108" width="178" height="52" rx="8" class="lane"/>
+        <text x="48" y="130" class="t-body">Approved users</text>
+        <text x="48" y="148" class="t-muted">alerts in private chat</text>
+        <rect x="36" y="170" width="178" height="52" rx="8" class="lane"/>
+        <text x="48" y="192" class="t-body">Administrators</text>
+        <text x="48" y="210" class="t-muted">Acknowledge · Maintenance</text>
+        <rect x="36" y="232" width="178" height="62" rx="8" class="lane"/>
+        <text x="48" y="254" class="t-body">Dashboard (Mini App)</text>
+        <text x="48" y="272" class="t-muted">status, history, charts,</text>
+        <text x="48" y="287" class="t-muted">nodes, users, messages</text>
+
+        <!-- Monitor -->
+        <rect x="300" y="20" width="370" height="310" rx="14" class="box-strong"/>
+        <text x="320" y="50" class="t-title">Egress Sentinel monitor</text>
+        <text x="320" y="68" class="t-muted">monitoring VPS · Node.js · systemd</text>
+        <rect x="318" y="84" width="160" height="58" rx="8" class="box"/>
+        <text x="330" y="106" class="t-body">Check engine</text>
+        <text x="330" y="124" class="t-mono">every 60 s, in parallel</text>
+        <rect x="492" y="84" width="160" height="58" rx="8" class="box"/>
+        <text x="504" y="106" class="t-body">State machine</text>
+        <text x="504" y="124" class="t-mono">thresholds, incidents</text>
+        <rect x="318" y="154" width="160" height="58" rx="8" class="box"/>
+        <text x="330" y="176" class="t-body">Notification gate</text>
+        <text x="330" y="194" class="t-mono">audiences, mute toggles</text>
+        <rect x="492" y="154" width="160" height="58" rx="8" class="box"/>
+        <text x="504" y="176" class="t-body">Persistent store</text>
+        <text x="504" y="194" class="t-mono">state, history, log</text>
+        <rect x="318" y="224" width="334" height="58" rx="8" class="box"/>
+        <text x="330" y="246" class="t-body">Dashboard API and sensor endpoint</text>
+        <text x="330" y="264" class="t-mono">HTTPS · Telegram-signed requests · sensor tokens</text>
+        <text x="320" y="310" class="t-muted">Survives restarts: open incidents continue under the same ID.</text>
+
+        <!-- Exit nodes -->
+        <text x="740" y="30" class="t-title">Exit nodes</text>
+        <g>
+          <rect x="740" y="44" width="200" height="40" rx="20" class="pill"/><circle cx="762" cy="64" r="6" class="node-ok"/><text x="776" y="68" class="t-body">NL-1 · VLESS</text>
+          <rect x="740" y="92" width="200" height="40" rx="20" class="pill"/><circle cx="762" cy="112" r="6" class="node-ok"/><text x="776" y="116" class="t-body">DE-1 · VLESS</text>
+          <rect x="740" y="140" width="200" height="40" rx="20" class="pill"/><circle cx="762" cy="160" r="6" class="node-ok"/><text x="776" y="164" class="t-body">DE-2 · VLESS</text>
+          <rect x="740" y="188" width="200" height="40" rx="20" class="pill"/><circle cx="762" cy="208" r="6" class="node-ok"/><text x="776" y="212" class="t-body">SW-1 · VLESS</text>
+          <rect x="740" y="236" width="200" height="40" rx="20" class="box-muted"/><circle cx="762" cy="256" r="6" class="node-off"/><text x="776" y="252" class="t-body">CDN · configs</text><text x="776" y="268" class="t-mono">traffic check off</text>
+        </g>
+
+        <!-- Probe target -->
+        <rect x="740" y="380" width="200" height="74" rx="12" class="box"/>
+        <text x="756" y="406" class="t-body">Probe target</text>
+        <text x="756" y="424" class="t-mono">HTTP 204 + exit-IP check</text>
+        <text x="756" y="441" class="t-mono">reached through the tunnel</text>
+
+        <!-- Sensor -->
+        <rect x="300" y="372" width="370" height="90" rx="14" class="box"/>
+        <text x="320" y="400" class="t-title">Traffic sensor · MSK-1</text>
+        <text x="320" y="420" class="t-muted">separate server in Russia, on the users’ side of the network</text>
+        <text x="320" y="440" class="t-mono">Xray client per node · curl probes · own canaries</text>
+
+        <!-- Wires: Telegram <-> monitor -->
+        <path d="M300,125 H232" class="wire" marker-end="url(#ah)"/>
+        <text x="240" y="117" class="t-label">ALERTS</text>
+        <path d="M232,205 H298" class="wire-muted" marker-end="url(#ahm)"/>
+        <text x="236" y="197" class="t-mono">commands</text>
+        <path d="M232,262 H316" class="wire-muted" marker-end="url(#ahm)"/>
+        <text x="236" y="254" class="t-mono">dashboard</text>
+
+        <!-- monitor -> nodes direct checks -->
+        <path d="M672,113 C700,113 708,64 738,64" class="wire" marker-end="url(#ah)"/>
+        <path d="M672,113 C705,113 710,112 738,112" class="wire" marker-end="url(#ah)"/>
+        <path d="M672,113 C700,113 708,160 738,160" class="wire" marker-end="url(#ah)"/>
+        <path d="M672,113 C700,113 708,208 738,208" class="wire" marker-end="url(#ah)"/>
+        <path d="M672,113 C700,113 708,256 738,256" class="wire" marker-end="url(#ah)"/>
+        <text x="676" y="98" class="t-label">DIRECT</text>
+
+        <!-- sensor -> nodes tunnels -->
+        <path d="M672,395 C716,395 716,300 790,280" class="wire-dash" marker-end="url(#ah)"/>
+        <text x="682" y="350" class="t-label">VLESS</text>
+        <text x="682" y="364" class="t-label">TUNNELS</text>
+        <!-- nodes -> probe -->
+        <path d="M880,278 V378" class="wire-dash" marker-end="url(#ah)"/>
+        <text x="888" y="334" class="t-mono">exit</text>
+        <!-- sensor -> monitor report -->
+        <path d="M485,372 V332" class="wire" marker-end="url(#ah)"/>
+        <text x="493" y="358" class="t-label">REPORT / 60 s</text>
+      </svg>
+    </div>
+    <p class="caption">CDN distributes client configurations and carries no user traffic, so traffic verification is switched off for it in the dashboard. It is still checked directly.</p>
+  </section>
+
+  <section aria-labelledby="cycle">
+    <div class="section-head">
+      <span class="eyebrow">Every 60 seconds</span>
+      <h2 id="cycle">One check cycle</h2>
+      <p class="prose">The order matters: a failed check only counts after the monitor has confirmed that its own network is fine.</p>
+    </div>
+    <ol class="cycle">
+      <li><h3>Advance the schedule</h3><p>Send due maintenance reminders, open windows that have started, close windows that have ended.</p></li>
+      <li><h3>Review the sensors</h3><p>A sensor that has been silent for three intervals is marked offline and its data is set aside.</p></li>
+      <li><h3>Check every node at once</h3><p>TCP connect, ICMP ping or HTTP GET, run in parallel, each with a 5 s timeout.</p></li>
+      <li><h3>Guard against itself</h3><p>If anything failed, probe the canary hosts. If they fail too, the monitor is offline: skip the cycle, alert no one.</p></li>
+      <li><h3>Merge sensor results</h3><p>Node answers, but a fresh sensor report says traffic does not pass: count it as a failed check, once per report.</p></li>
+      <li><h3>Apply transitions</h3><p>Move counters and statuses, open or close incidents in the log, and track latency streaks.</p></li>
+      <li><h3>Notify</h3><p>Queue the notices in order, filter muted categories, deliver to subscribers or administrators only.</p></li>
+      <li><h3>Persist</h3><p>Write node state after every cycle and history every 5 minutes, so a restart loses nothing.</p></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="scenarios">
+    <div class="section-head">
+      <span class="eyebrow">Scenarios</span>
+      <h2 id="scenarios">Step through what happens</h2>
+      <p class="prose">Pick a situation and walk through it cycle by cycle. The right-hand panel shows the notice that goes out at that step, if any.</p>
+    </div>
+    <div class="sim">
+      <div class="tabs" role="group" aria-label="Scenario" id="tabs"></div>
+      <p class="sim-summary" id="summary"></p>
+      <div class="sim-body">
+        <div class="timeline">
+          <table>
+            <thead><tr><th scope="col">Time</th><th scope="col">Direct check</th><th scope="col">Traffic (sensor)</th><th scope="col">Counter</th><th scope="col">Status</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="preview" aria-live="polite">
+          <span class="preview-label">At this step</span>
+          <p class="note" id="note"></p>
+          <div id="message"></div>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="ctl" id="prev" type="button">◀ Back</button>
+        <button class="ctl primary" id="next" type="button">Next ▶</button>
+        <button class="ctl" id="play" type="button">Play</button>
+        <button class="ctl" id="reset" type="button">Reset</button>
+        <span class="stepinfo" id="stepinfo"></span>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="states">
+    <div class="section-head">
+      <span class="eyebrow">Status model</span>
+      <h2 id="states">What each status means</h2>
+    </div>
+    <div class="states">
+      <div class="state"><span><span class="chip">PENDING</span></span><dl><dt>Enters</dt><dd>A node was just added and has not been checked yet.</dd><dt>Leaves</dt><dd>After the first check.</dd></dl></div>
+      <div class="state"><span><span class="chip up">OPERATIONAL</span></span><dl><dt>Enters</dt><dd>A check succeeds and, where a sensor covers the node, traffic passes.</dd><dt>Notifies</dt><dd>“Service restored” when it follows an outage.</dd></dl></div>
+      <div class="state"><span><span class="chip unstable">UNSTABLE</span></span><dl><dt>Enters</dt><dd>1–2 consecutive failures, below the threshold.</dd><dt>Notifies</dt><dd>Nobody. Visible in the dashboard only.</dd></dl></div>
+      <div class="state"><span><span class="chip down">UNAVAILABLE</span></span><dl><dt>Enters</dt><dd>3 consecutive failures, either direct or traffic. Gets an incident ID <span class="mono">INC-…</span>.</dd><dt>Notifies</dt><dd>Outage notice, then an update every 60 min until acknowledged.</dd></dl></div>
+      <div class="state"><span><span class="chip degraded">DEGRADED</span></span><dl><dt>Enters</dt><dd>Response time above the node’s threshold for 3 checks in a row. ID <span class="mono">LAT-…</span>.</dd><dt>Leaves</dt><dd>After 3 normal checks in a row, so it does not flicker.</dd></dl></div>
+      <div class="state"><span><span class="chip maintenance">MAINTENANCE</span></span><dl><dt>Enters</dt><dd>An administrator opens a window, or a scheduled one starts. ID <span class="mono">MNT-…</span>.</dd><dt>Effect</dt><dd>No alerts; the period is excluded from availability.</dd></dl></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="guards">
+    <div class="section-head">
+      <span class="eyebrow">False-alarm protection</span>
+      <h2 id="guards">Why an alert can be trusted</h2>
+      <p class="prose">Every rule below exists to keep one failure somewhere else from looking like an exit node outage.</p>
+    </div>
+    <div class="guards">
+      <div class="guard"><span class="k">Threshold</span><h3>Three strikes</h3><p>A single lost packet or slow handshake never reaches users. An outage needs three consecutive failed checks.</p></div>
+      <div class="guard"><span class="k">Canaries</span><h3>The monitor checks itself</h3><p>When checks fail, well-known hosts are probed. If they fail too, the cycle is skipped and no alert is raised.</p></div>
+      <div class="guard"><span class="k">Sensor health</span><h3>A broken sensor is set aside</h3><p>The sensor verifies its own Russian and foreign connectivity and its Xray process. If either fails, it reports itself impaired and its results are ignored.</p></div>
+      <div class="guard"><span class="k">Once per report</span><h3>One observation, one strike</h3><p>A sensor report stays valid for a few minutes, but each report is counted only once.</p></div>
+      <div class="guard"><span class="k">Consensus</span><h3>All sensors must agree</h3><p>With several sensors, traffic counts as failed only when it fails for every one of them.</p></div>
+      <div class="guard"><span class="k">Hold</span><h3>No false recoveries</h3><p>An outage found by the sensor is cleared only by a new sensor result. A silent sensor does not count as the node coming back.</p></div>
+      <div class="guard"><span class="k">Hysteresis</span><h3>Latency needs a streak</h3><p>Three slow checks to declare, three normal checks to clear.</p></div>
+      <div class="guard"><span class="k">Persistence</span><h3>Restarts are invisible</h3><p>Counters, open incidents and acknowledgements are saved every cycle. After a restart the same incident continues with no repeated alert.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="who">
+    <div class="section-head">
+      <span class="eyebrow">Notifications</span>
+      <h2 id="who">Who receives what</h2>
+      <p class="prose">Any category can be muted by an administrator. A muted category goes to nobody, but monitoring and the incident log continue as usual. If the maintenance announcement is muted, the “starting soon” reminder still goes out.</p>
+    </div>
+    <div class="matrix">
+      <table>
+        <thead><tr><th scope="col">Notice</th><th scope="col">Users</th><th scope="col">Admins</th><th scope="col">Sent when</th></tr></thead>
+        <tbody>
+          <tr><td class="msg">🔴 Outage notification</td><td class="yes">✓</td><td class="yes">✓</td><td>An exit node is declared unavailable</td></tr>
+          <tr><td class="msg">🟠 Outage update</td><td class="yes">✓</td><td class="yes">✓</td><td>Every 60 min while unacknowledged</td></tr>
+          <tr><td class="msg">☑️ Incident acknowledged</td><td class="yes">✓</td><td class="yes">✓</td><td>An administrator takes the incident</td></tr>
+          <tr><td class="msg">🟢 Service restored</td><td class="yes">✓</td><td class="yes">✓</td><td>The node answers again; includes total downtime</td></tr>
+          <tr><td class="msg">🟡 / 🟢 Latency</td><td class="yes">✓</td><td class="yes">✓</td><td>Degradation declared and cleared</td></tr>
+          <tr><td class="msg">📅 Maintenance</td><td class="yes">✓</td><td class="yes">✓</td><td>Announced, starting soon, cancelled</td></tr>
+          <tr><td class="msg">🔧 Maintenance window</td><td class="yes">✓</td><td class="yes">✓</td><td>Window opened, extended, closed</td></tr>
+          <tr><td class="msg">📨 Notice from the administrator</td><td class="yes">✓</td><td class="no">—</td><td>Written in the dashboard to selected users</td></tr>
+          <tr><td class="msg">📡 Traffic sensor</td><td class="no">—</td><td class="yes">✓</td><td>Connected, impaired, offline, restored</td></tr>
+          <tr><td class="msg">🔐 Access request</td><td class="no">—</td><td class="yes">✓</td><td>Someone asks for access; Approve / Deny buttons</td></tr>
+          <tr><td class="msg">🛠 Configuration change</td><td class="no">—</td><td class="yes">✓</td><td>A node or template is added, changed or removed</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="access">
+    <div class="section-head">
+      <span class="eyebrow">Access</span>
+      <h2 id="access">Getting on the list</h2>
+      <p class="prose">There is no shared group. Every recipient is approved individually and receives notices in a private chat with the bot.</p>
+    </div>
+    <ol class="flow">
+      <li><h3>Request</h3><p>The user opens the bot, presses Start, then Request access.</p></li>
+      <li><h3>Review</h3><p>Administrators get the request with Approve and Deny buttons.</p></li>
+      <li><h3>Subscribe</h3><p>Approval subscribes the user to alerts and opens a read-only dashboard. Node addresses are never shown to users.</p></li>
+      <li><h3>Manage</h3><p>Users can switch notifications off themselves. Administrators can revoke access or send a notice.</p></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="data">
+    <div class="section-head">
+      <span class="eyebrow">Records</span>
+      <h2 id="data">What is kept</h2>
+    </div>
+    <div class="data">
+      <div><code>state</code><p>Live state of every node and open incidents. Written every cycle.</p></div>
+      <div><code>history</code><p>5-minute buckets for 48 hours, hourly buckets for 90 days. Feeds the charts and 30-day availability.</p></div>
+      <div><code>incidents</code><p>The last 1000 outages and latency incidents, with start, end, cause and acknowledgement.</p></div>
+      <div><code>store</code><p>Nodes, schedules, users, notification texts and toggles, sensor registrations (token hashes only).</p></div>
+    </div>
+  </section>
+
+  <footer>Timings and thresholds are the production settings. Examples in the scenarios are illustrative. VLESS links and keys stay on the sensor server; the monitor receives only “passing / not passing”, latency and exit IP.</footer>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  // Сценарии: каждая строка — один цикл (или событие). status: up | unstable | down | degraded | maintenance.
+  const S = [
+    {
+      id: 'outage', label: 'Exit node goes down',
+      summary: 'SW-1 stops answering. Three consecutive failed checks are needed before anyone is notified.',
+      rows: [
+        { t: '12:00', d: ['ok', 'TCP · 41 ms'], x: ['ok', 'Passing · 480 ms'], c: '0 / 3', s: 'up', note: 'A normal cycle. Nothing is sent.' },
+        { t: '12:01', d: ['bad', 'Timeout'], x: ['bad', 'Not passing'], c: '1 / 3', s: 'unstable', note: 'First failure. It is shown as UNSTABLE in the dashboard; nobody is notified.' },
+        { t: '12:02', d: ['bad', 'Timeout'], x: ['bad', 'Not passing'], c: '2 / 3', s: 'unstable', note: 'Still below the threshold.' },
+        { t: '12:03', d: ['bad', 'Timeout'], x: ['bad', 'Not passing'], c: '3 / 3', s: 'down', note: 'Third consecutive failure: the outage is declared and logged with an incident ID.',
+          m: { title: '🔴 INCIDENT NOTIFICATION — EXIT NODE OUTAGE', body: 'Incident ID    INC-20261014-1201-5B4D\nSeverity       SEV-3 / MINOR\nError          No response (timeout)\nFailed checks  3 consecutive (threshold 3)', to: 'Users and administrators. Administrators also get Acknowledge and Maintenance buttons.' } },
+        { t: '12:05', d: ['bad', 'Timeout'], x: ['bad', 'Not passing'], c: '5 / 3', s: 'down', note: 'An administrator presses Acknowledge. Without it, an update would follow every 60 minutes.',
+          m: { title: '☑️ INCIDENT ACKNOWLEDGED', body: 'Incident ID    INC-20261014-1201-5B4D\nAcknowledged   12:05\nRepeat notices suspended', to: 'Users and administrators.' } },
+        { t: '12:11', d: ['ok', 'TCP · 44 ms'], x: ['ok', 'Passing · 455 ms'], c: '0 / 3', s: 'up', note: 'The node answers again. The incident is closed under the same ID.',
+          m: { title: '🟢 INCIDENT RESOLUTION — SERVICE RESTORED', body: 'Incident ID    INC-20261014-1201-5B4D\nTotal downtime 10 min\nAvailability   99.93% (30 d)', to: 'Users and administrators.' } },
+      ],
+    },
+    {
+      id: 'traffic', label: 'Traffic blocked, port open',
+      summary: 'DE-1 still accepts connections, but VLESS traffic no longer passes. Only the sensor on the users’ side can see this.',
+      rows: [
+        { t: '12:00', d: ['ok', 'TCP · 38 ms'], x: ['ok', 'Passing · 410 ms'], c: '0 / 3', s: 'up', note: 'Both checks pass.' },
+        { t: '12:01', d: ['ok', 'TCP · 39 ms'], x: ['bad', 'Not passing (12:00:50)'], c: '1 / 3', s: 'unstable', note: 'The port is open but the tunnel is not. This counts as a failed check.' },
+        { t: '12:02', d: ['ok', 'TCP · 37 ms'], x: ['neutral', 'Same report'], c: '1 / 3', s: 'unstable', note: 'No new sensor report since the last cycle. Each report counts once, so one report can never reach the threshold alone.' },
+        { t: '12:03', d: ['ok', 'TCP · 40 ms'], x: ['bad', 'Not passing (12:02:51)'], c: '2 / 3', s: 'unstable', note: 'A new report, a second strike.' },
+        { t: '12:04', d: ['ok', 'TCP · 38 ms'], x: ['bad', 'Not passing (12:03:51)'], c: '3 / 3', s: 'down', note: 'Third strike. Users are told that the node answers but carries no traffic.',
+          m: { title: '🔴 INCIDENT NOTIFICATION — EXIT NODE OUTAGE', body: 'Direct check   Passing — the exit node responds\nTraffic check  NOT PASSING · sensor MSK-1\nError          VLESS traffic not passing\n               (sensor MSK-1): tunnel could\n               not be established', to: 'Users and administrators.' } },
+        { t: '12:20', d: ['ok', 'TCP · 41 ms'], x: ['ok', 'Passing · 395 ms'], c: '0 / 3', s: 'up', note: 'The sensor sees traffic again. Only a sensor result can clear this outage.',
+          m: { title: '🟢 INCIDENT RESOLUTION — SERVICE RESTORED', body: 'Total downtime 19 min\nTraffic check  Passing · sensor MSK-1', to: 'Users and administrators.' } },
+      ],
+    },
+    {
+      id: 'sensor', label: 'Sensor loses its uplink',
+      summary: 'The sensor server in Russia loses its foreign connectivity. Its results are set aside instead of turning into outages.',
+      rows: [
+        { t: '12:00', d: ['ok', 'All nodes · OK'], x: ['ok', 'Passing'], c: '0 / 3', s: 'up', note: 'Sensor MSK-1 is online.' },
+        { t: '12:01', d: ['ok', 'All nodes · OK'], x: ['neutral', 'Sensor impaired'], c: '0 / 3', s: 'up', note: 'The sensor’s own canary to a foreign host fails, so it reports itself impaired instead of reporting every node as down.',
+          m: { title: '📡 TRAFFIC SENSOR IMPAIRED', body: 'Sensor   MSK-1\nReason   No direct connectivity at the sensor\n         to www.gstatic.com\nEffect   results disregarded; direct checks only', to: 'Administrators only.' } },
+        { t: '12:02', d: ['ok', 'All nodes · OK'], x: ['neutral', 'Ignored'], c: '0 / 3', s: 'up', note: 'Exit nodes are judged by the direct check alone. Users receive nothing.' },
+        { t: '12:06', d: ['ok', 'All nodes · OK'], x: ['neutral', 'No reports · 4 min'], c: '0 / 3', s: 'up', note: 'The sensor has gone silent for three intervals and is marked offline.',
+          m: { title: '📡 TRAFFIC SENSOR OFFLINE', body: 'Sensor        MSK-1\nLast report   12:02\nReason        no report for 4 min', to: 'Administrators only.' } },
+        { t: '12:15', d: ['ok', 'All nodes · OK'], x: ['ok', 'Passing'], c: '0 / 3', s: 'up', note: 'Reports resume and traffic verification continues.',
+          m: { title: '📡 TRAFFIC SENSOR RESTORED', body: 'Sensor   MSK-1\nExit nodes  NL-1, DE-1, DE-2, SW-1', to: 'Administrators only.' } },
+      ],
+    },
+    {
+      id: 'monitor', label: 'Monitor loses internet',
+      summary: 'The monitoring server itself drops off the network. Every check fails at once, which says nothing about the exit nodes.',
+      rows: [
+        { t: '12:00', d: ['ok', 'All nodes · OK'], x: ['ok', 'Passing'], c: '0 / 3', s: 'up', note: 'A normal cycle.' },
+        { t: '12:01', d: ['bad', 'All nodes · timeout'], x: ['neutral', '—'], c: 'unchanged', s: 'up', note: 'The canary hosts are unreachable too, so the monitor concludes that it is offline itself. The cycle is skipped and no counters move.' },
+        { t: '12:02', d: ['bad', 'All nodes · timeout'], x: ['neutral', '—'], c: 'unchanged', s: 'up', note: 'Skipped again. No alert reaches anyone.' },
+        { t: '12:03', d: ['ok', 'All nodes · OK'], x: ['ok', 'Passing'], c: '0 / 3', s: 'up', note: 'Connectivity is back. The gap shows in charts as missing data, not as downtime of the nodes.' },
+      ],
+    },
+    {
+      id: 'latency', label: 'Latency rises',
+      summary: 'NL-1 still answers, but slowly. Its threshold is 300 ms, and three slow checks in a row are required.',
+      rows: [
+        { t: '12:00', d: ['ok', 'TCP · 120 ms'], x: ['ok', 'Passing'], c: 'slow 0 / 3', s: 'up', note: 'Normal response time.' },
+        { t: '12:01', d: ['warn', 'TCP · 340 ms'], x: ['ok', 'Passing'], c: 'slow 1 / 3', s: 'up', note: 'Above the threshold, but one slow check proves nothing.' },
+        { t: '12:02', d: ['warn', 'TCP · 365 ms'], x: ['ok', 'Passing'], c: 'slow 2 / 3', s: 'up', note: 'Second slow check.' },
+        { t: '12:03', d: ['warn', 'TCP · 410 ms'], x: ['ok', 'Passing'], c: 'slow 3 / 3', s: 'degraded', note: 'Third slow check: degradation is declared with its own ID.',
+          m: { title: '🟡 PERFORMANCE DEGRADATION — HIGH LATENCY', body: 'Incident ID    LAT-20261014-1201-E9D5\nResponse time  410 ms\nThreshold      300 ms\nSlow checks    3 consecutive', to: 'Users and administrators.' } },
+        { t: '12:04', d: ['ok', 'TCP · 180 ms'], x: ['ok', 'Passing'], c: 'normal 1 / 3', s: 'degraded', note: 'Clearing also needs three normal checks, so the status does not flicker.' },
+        { t: '12:06', d: ['ok', 'TCP · 150 ms'], x: ['ok', 'Passing'], c: 'normal 3 / 3', s: 'up', note: 'Back to normal.',
+          m: { title: '🟢 PERFORMANCE RESTORED', body: 'Incident ID    LAT-20261014-1201-E9D5\nPeak           410 ms\nDuration       5 min', to: 'Users and administrators.' } },
+      ],
+    },
+    {
+      id: 'maintenance', label: 'Planned maintenance',
+      summary: 'An administrator plans work on DE-2 for 14:00–15:00. Users are told in advance, and failures during the window raise no alerts.',
+      rows: [
+        { t: '09:00', d: ['neutral', '—'], x: ['neutral', '—'], c: '—', s: 'up', note: 'The window is scheduled in the dashboard. The announcement goes out at once, unless it is muted.',
+          m: { title: '📅 SCHEDULED MAINTENANCE NOTICE', body: 'Reference     MNT-20261014-30AC\nExit nodes    DE-2\nWindow        14:00 → 15:00 UTC+3\nReason        Kernel upgrade', to: 'Users and administrators.' } },
+        { t: '13:00', d: ['ok', 'TCP · 52 ms'], x: ['ok', 'Passing'], c: '0 / 3', s: 'up', note: 'One hour before the start, a reminder. It is sent even when the announcement category is muted.',
+          m: { title: '📅 UPCOMING MAINTENANCE REMINDER', body: 'Reference     MNT-20261014-30AC\nStarts in     1 h', to: 'Users and administrators.' } },
+        { t: '14:00', d: ['ok', 'TCP · 50 ms'], x: ['ok', 'Passing'], c: '—', s: 'maintenance', note: 'The window opens on its own.',
+          m: { title: '🔧 MAINTENANCE WINDOW OPENED', body: 'Exit node     DE-2\nWindow end    15:00\nAuthorised by Administrator', to: 'Users and administrators.' } },
+        { t: '14:20', d: ['bad', 'Timeout'], x: ['bad', 'Not passing'], c: 'ignored', s: 'maintenance', note: 'The node is rebooting. Failures inside the window raise no alerts and do not count against availability.' },
+        { t: '15:00', d: ['ok', 'TCP · 49 ms'], x: ['ok', 'Passing'], c: '0 / 3', s: 'up', note: 'The window closes on schedule and normal monitoring resumes.',
+          m: { title: '🔧 MAINTENANCE WINDOW CLOSED', body: 'Exit node     DE-2\nDuration      1 h\nClosed by     Scheduled expiry', to: 'Users and administrators.' } },
+      ],
+    },
+  ];
+
+  const LABEL = { up: 'OPERATIONAL', unstable: 'UNSTABLE', down: 'UNAVAILABLE', degraded: 'DEGRADED', maintenance: 'MAINTENANCE' };
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let scenario = S[0];
+  let step = 0;
+  let timer = null;
+
+  function renderTabs() {
+    $('tabs').innerHTML = S.map((s) =>
+      `<button type="button" class="tab" data-id="${s.id}" aria-pressed="${s === scenario}">${esc(s.label)}</button>`).join('');
+  }
+
+  const cell = ([kind, text]) => `<span class="cell"><span class="dot ${kind}"></span>${esc(text)}</span>`;
+
+  function render() {
+    $('summary').textContent = scenario.summary;
+    $('rows').innerHTML = scenario.rows.map((r, i) => `
+      <tr class="step-row ${i === step ? 'current' : i > step ? 'future' : ''}" data-i="${i}" tabindex="0" aria-current="${i === step ? 'step' : 'false'}">
+        <td class="time">${esc(r.t)}</td><td>${cell(r.d)}</td><td>${cell(r.x)}</td>
+        <td class="counter">${esc(r.c)}</td><td><span class="chip ${r.s}">${LABEL[r.s]}</span></td>
+      </tr>`).join('');
+    const r = scenario.rows[step];
+    $('note').textContent = r.note;
+    $('message').innerHTML = r.m
+      ? `<div class="bubble"><div class="bubble-title">${esc(r.m.title)}</div><pre>${esc(r.m.body)}</pre><div class="bubble-to">To: ${esc(r.m.to)}</div></div>`
+      : '<div class="silent">No notification at this step.</div>';
+    $('prev').disabled = step === 0;
+    $('next').disabled = step === scenario.rows.length - 1;
+    $('stepinfo').textContent = `Step ${step + 1} of ${scenario.rows.length}`;
+    $('play').textContent = timer ? 'Pause' : 'Play';
+  }
+
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  function go(i) { step = Math.max(0, Math.min(scenario.rows.length - 1, i)); render(); }
+
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('.tab');
+    if (!b) return;
+    stop();
+    scenario = S.find((s) => s.id === b.dataset.id);
+    step = 0;
+    renderTabs();
+    render();
+  });
+  $('rows').addEventListener('click', (e) => { const tr = e.target.closest('.step-row'); if (tr) { stop(); go(Number(tr.dataset.i)); } });
+  $('rows').addEventListener('keydown', (e) => {
+    const tr = e.target.closest('.step-row');
+    if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); stop(); go(Number(tr.dataset.i)); }
+  });
+  $('prev').addEventListener('click', () => { stop(); go(step - 1); });
+  $('next').addEventListener('click', () => { stop(); go(step + 1); });
+  $('reset').addEventListener('click', () => { stop(); go(0); });
+  $('play').addEventListener('click', () => {
+    if (timer) { stop(); render(); return; }
+    if (step === scenario.rows.length - 1) step = 0;
+    timer = setInterval(() => {
+      if (step >= scenario.rows.length - 1) { stop(); render(); return; }
+      go(step + 1);
+    }, 1800);
+    render();
+  });
+
+  renderTabs();
+  render();
+})();
+</script>
+</body>
+</html>

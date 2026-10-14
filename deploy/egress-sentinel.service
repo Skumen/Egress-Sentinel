@@ -1,0 +1,24 @@
+[Unit]
+Description=Egress Sentinel (exit node monitor, Telegram bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sentinel
+Group=sentinel
+WorkingDirectory=/opt/egress-sentinel
+# Check the path to node with: which node
+ExecStart=/usr/bin/node /opt/egress-sentinel/index.js
+Restart=always
+RestartSec=10
+
+# Hardening: the bot cannot modify the system, see home directories or other services' temp files.
+# Writes remain possible only under /opt (where the bot keeps data/).
+# NoNewPrivileges is deliberately not set: ping may rely on file capabilities to open an ICMP socket.
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

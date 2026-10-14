@@ -1,0 +1,14 @@
+{
+  "reportUrl": "https://monitor.example.com/api/sensor/report",
+  "token": "PASTE-THE-TOKEN-FROM-THE-DASHBOARD",
+  "xrayPath": "/usr/local/bin/xray",
+  "intervalSeconds": 60,
+  "timeoutSeconds": 10,
+  "probeUrl": "https://www.gstatic.com/generate_204",
+  "ipUrl": "https://api.ipify.org",
+  "canaries": ["https://ya.ru", "https://www.gstatic.com/generate_204"],
+  "nodes": [
+    { "id": "a1b2c3d4", "link": "vless://PASTE-LINK-FOR-NL-1" },
+    { "id": "e5f6a7b8", "link": "vless://PASTE-LINK-FOR-DE-1", "expectIp": "203.0.113.20" }
+  ]
+}
